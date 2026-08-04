@@ -5,11 +5,17 @@ type Props = {
   state: SkyState;
   mode: SkyMode;
   description: string;
+  showGolfHole?: boolean;
 };
 
 const normalizeAngle = (degrees: number) => ((degrees + 540) % 360) - 180;
 
-export function SkyCanvas({ state, mode, description }: Props) {
+export function SkyCanvas({
+  state,
+  mode,
+  description,
+  showGolfHole = false,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -192,6 +198,33 @@ export function SkyCanvas({ state, mode, description }: Props) {
           width / 2,
           horizon + 44,
         );
+
+        if (showGolfHole) {
+          const flagX = width * 0.72;
+          const groundY =
+            horizon +
+            20 +
+            Math.sin(flagX / 47) * 8 +
+            Math.sin(flagX / 17) * 2.5;
+          const flagTop = groundY - 38;
+          context.strokeStyle = "rgba(220, 232, 226, .62)";
+          context.lineWidth = 1.5;
+          context.beginPath();
+          context.moveTo(flagX, flagTop);
+          context.lineTo(flagX, groundY);
+          context.stroke();
+          context.fillStyle = "rgba(255, 190, 112, .78)";
+          context.beginPath();
+          context.moveTo(flagX, flagTop + 1);
+          context.lineTo(flagX + 13, flagTop + 6);
+          context.lineTo(flagX, flagTop + 11);
+          context.closePath();
+          context.fill();
+          context.fillStyle = "rgba(220, 232, 226, .72)";
+          context.beginPath();
+          context.ellipse(flagX, groundY, 7, 2, 0, 0, Math.PI * 2);
+          context.fill();
+        }
       }
     };
 
@@ -199,14 +232,19 @@ export function SkyCanvas({ state, mode, description }: Props) {
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [mode, state]);
+  }, [mode, showGolfHole, state]);
 
   return (
     <canvas
       ref={canvasRef}
       className="sky-canvas"
+      data-golf-hole={showGolfHole && mode === "sky" ? "true" : "false"}
       data-testid="sky-canvas"
-      aria-label={description}
+      aria-label={
+        showGolfHole && mode === "sky"
+          ? `${description} A small golf flag marks the landscape.`
+          : description
+      }
     />
   );
 }

@@ -32,7 +32,11 @@ test("@smoke runs without cross-origin requests or console errors", async ({
 test("searches featured places and persists the selection", async ({
   page,
 }) => {
+  await expect(page.getByTestId("location-picker")).toContainText(
+    "Amsterdam, Netherlands",
+  );
   await page.getByTestId("location-picker").click();
+  await expect(page.getByTestId("place-Amsterdam, Netherlands")).toBeVisible();
   await page.getByTestId("city-search").fill("Atlantis");
   await expect(page.getByText(/no featured match/i)).toBeVisible();
   await page.getByTestId("city-search").fill("Copenhagen");
@@ -43,6 +47,30 @@ test("searches featured places and persists the selection", async ({
   await page.reload();
   await expect(page.getByTestId("location-picker")).toContainText(
     "Copenhagen, Denmark",
+  );
+});
+
+test("zooms the location picker map", async ({ page }) => {
+  await page.getByTestId("location-picker").click();
+  const map = page.getByTestId("location-map");
+  const initialViewBox = await map.getAttribute("viewBox");
+  await page.getByTestId("location-map-zoom-in").click();
+  await expect(map).not.toHaveAttribute("viewBox", initialViewBox ?? "");
+  await page.getByTestId("location-map-zoom-out").click();
+  await expect(map).toHaveAttribute("viewBox", initialViewBox ?? "");
+});
+
+test("reveals the Molenhoek golf easter egg", async ({ page }) => {
+  await page.getByTestId("location-picker").click();
+  await page.getByTestId("place-Pitch&Putt Molenhoek").click();
+  await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
+    "data-golf-hole",
+    "true",
+  );
+  await page.getByTestId("mode-closeup").click();
+  await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
+    "data-golf-hole",
+    "false",
   );
 });
 

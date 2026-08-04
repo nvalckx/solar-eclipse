@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { CITY_CATALOG } from "./city-catalog";
+import { DEFAULT_CITY } from "./city-catalog";
 import { calculateSkyState, eclipseWindowFor } from "./eclipse-logic";
 import type { ObserverLocation, SkyMode, SkyState } from "./types";
 import {
@@ -18,6 +18,7 @@ import { Timeline } from "./components/Timeline";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+const GOLF_LOCATION_LABEL = "Pitch&Putt Molenhoek";
 
 function readSavedLocation() {
   try {
@@ -71,7 +72,7 @@ function formatDuration(seconds: number | undefined) {
 
 export function App() {
   const initial = useMemo(() => {
-    const fallback = readSavedLocation() ?? CITY_CATALOG[0];
+    const fallback = readSavedLocation() ?? DEFAULT_CITY;
     const shared = parseSharedView(window.location.search, fallback);
     const eclipse = eclipseWindowFor(shared.location);
     const min = eclipse.start.getTime() - 30 * 60_000;
@@ -329,7 +330,12 @@ export function App() {
               </div>
             </header>
             <div className="sky-frame">
-              <SkyCanvas state={state} mode={mode} description={description} />
+              <SkyCanvas
+                state={state}
+                mode={mode}
+                description={description}
+                showGolfHole={location.label === GOLF_LOCATION_LABEL}
+              />
               <div className="scale-note">
                 {mode === "closeup"
                   ? "Magnified equally · overlap remains accurate"
