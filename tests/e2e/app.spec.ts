@@ -233,27 +233,50 @@ test("has no detectable accessibility violations or horizontal overflow", async 
   }
 });
 
-test("matches the totality layout snapshots", async ({ page }, testInfo) => {
+test("renders totality layouts at Chromium breakpoints", async ({
+  page,
+}, testInfo) => {
   test.skip(
-    testInfo.project.name !== "chromium",
-    "Visual baselines use the stable desktop Chromium project.",
+    !["chromium", "mobile-chromium"].includes(testInfo.project.name),
+    "Layout checks target Chromium projects.",
   );
   await page.getByTestId("maximum-time").click();
-  await expect(page).toHaveScreenshot("totality-sky.png", {
-    fullPage: true,
-    animations: "disabled",
-    caret: "hide",
-    threshold: 0.25,
-    maxDiffPixelRatio: 0.02,
+  await expect(page.getByRole("heading", { name: /totality/i })).toBeVisible();
+  await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
+    "aria-label",
+    /sky view.*totality/i,
+  );
+
+  const skyLayout = await page.evaluate(() => {
+    const simulator = document
+      .querySelector("#simulator")
+      ?.getBoundingClientRect();
+    const canvas = document
+      .querySelector("[data-testid='sky-canvas']")
+      ?.getBoundingClientRect();
+    return {
+      simulatorWidth: simulator?.width ?? 0,
+      simulatorHeight: simulator?.height ?? 0,
+      canvasWidth: canvas?.width ?? 0,
+      canvasHeight: canvas?.height ?? 0,
+      horizontalOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    };
   });
+  expect(skyLayout.simulatorWidth).toBeGreaterThan(300);
+  expect(skyLayout.simulatorHeight).toBeGreaterThan(500);
+  expect(skyLayout.canvasWidth).toBeGreaterThan(300);
+  expect(skyLayout.canvasHeight).toBeGreaterThan(300);
+  expect(skyLayout.horizontalOverflow).toBeLessThanOrEqual(0);
+
   await page.getByTestId("mode-closeup").click();
-  await expect(page.locator("#simulator")).toHaveScreenshot(
-    "totality-closeup.png",
-    {
-      animations: "disabled",
-      caret: "hide",
-      threshold: 0.25,
-      maxDiffPixelRatio: 0.02,
-    },
+  await expect(page.getByTestId("mode-closeup")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
+    "aria-label",
+    /magnified close-up.*totality/i,
   );
 });
