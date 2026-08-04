@@ -233,7 +233,7 @@ test("has no detectable accessibility violations or horizontal overflow", async 
   }
 });
 
-test("renders totality layouts at Chromium breakpoints", async ({
+test("renders simulator layouts at Chromium breakpoints", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -241,10 +241,10 @@ test("renders totality layouts at Chromium breakpoints", async ({
     "Layout checks target Chromium projects.",
   );
   await page.getByTestId("maximum-time").click();
-  await expect(page.getByRole("heading", { name: /totality/i })).toBeVisible();
+  await expect(page.locator("#simulator-title")).toBeVisible();
   await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
     "aria-label",
-    /sky view.*totality/i,
+    /^Sky view\./i,
   );
 
   const skyLayout = await page.evaluate(() => {
@@ -277,6 +277,6 @@ test("renders totality layouts at Chromium breakpoints", async ({
   );
   await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
     "aria-label",
-    /magnified close-up.*totality/i,
+    /^Magnified close-up\./i,
   );
 });
