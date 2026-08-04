@@ -7,9 +7,7 @@ type Props = {
 };
 
 const directionFor = (azimuth: number) =>
-  ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
-    Math.round(azimuth / 45) % 8
-  ];
+  ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(azimuth / 45) % 8];
 
 function markerStyle(azimuth: number, radius: number): CSSProperties {
   const angle = (azimuth * Math.PI) / 180;
