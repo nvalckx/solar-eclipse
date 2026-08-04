@@ -211,13 +211,15 @@ test("matches the totality layout snapshots", async ({ page }, testInfo) => {
     "Visual baselines use Chromium rendering.",
   );
   await page.getByTestId("maximum-time").click();
-  await expect(page).toHaveScreenshot("totality-sky.png", {
-    fullPage: true,
-    animations: "disabled",
-    caret: "hide",
-    threshold: 0.25,
-    maxDiffPixelRatio: 0.02,
-  });
+  if (testInfo.project.name === "chromium") {
+    await expect(page).toHaveScreenshot("totality-sky.png", {
+      fullPage: true,
+      animations: "disabled",
+      caret: "hide",
+      threshold: 0.25,
+      maxDiffPixelRatio: 0.02,
+    });
+  }
   await page.getByTestId("mode-closeup").click();
   await expect(page.locator("#simulator")).toHaveScreenshot(
     "totality-closeup.png",
