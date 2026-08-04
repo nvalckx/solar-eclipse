@@ -1077,6 +1077,100 @@ h1 em {
 .path-map-wrap {
   background: #071523;
 }
+.map-visual.path-replay {
+  overflow: hidden;
+}
+.map-path-controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
+}
+.map-view-button,
+.map-shadow-readout {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid rgba(211, 227, 243, 0.24);
+  border-radius: 7px;
+  background: rgba(2, 9, 17, 0.84);
+  color: #dce7f2;
+  font: 11px var(--mono);
+}
+.map-view-button {
+  pointer-events: auto;
+}
+.map-view-button:hover {
+  border-color: var(--orange-bright);
+  color: var(--orange-bright);
+}
+.map-shadow-readout {
+  color: var(--orange-bright);
+  white-space: nowrap;
+}
+.shadow-footprint {
+  fill: rgba(255, 147, 102, 0.48);
+  stroke: #fff1bf;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 9px rgba(255, 147, 102, 0.9));
+}
+.shadow-footprint circle {
+  fill: #fff3d6;
+  stroke: var(--orange);
+  stroke-width: 1.5;
+}
+.path-replay-bar {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(6, 16, 28, 0.72);
+}
+.path-replay-bar strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink);
+  font: 14px var(--mono);
+}
+.path-replay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.path-replay-button,
+.path-restart-button {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font-size: 12px;
+}
+.path-replay-button {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #07101c;
+  font-weight: 700;
+}
+.path-restart-button:hover {
+  border-color: var(--orange-bright);
+  color: var(--orange-bright);
+}
+.legend-shadow {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 8px var(--orange);
+}
 .map-legend {
   padding: 14px 18px;
   display: flex;
@@ -1193,5 +1287,8 @@ h1 em {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+  .shadow-footprint {
+    filter: none;
   }
 }

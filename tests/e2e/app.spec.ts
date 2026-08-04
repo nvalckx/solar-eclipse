@@ -114,14 +114,34 @@ test("switches views and controls the timeline and playback", async ({
 });
 
 test("opens the verified path dialog and restores focus", async ({ page }) => {
+  const previousTime = await page.getByTestId("eclipse-timeline").inputValue();
   const opener = page.getByTestId("open-map");
   await opener.click();
   await expect(
     page.getByRole("dialog", { name: /where totality travels/i }),
   ).toBeVisible();
-  await expect(page.getByTestId("path-map")).toBeVisible();
+  const map = page.getByTestId("path-map");
+  await expect(map).toBeVisible();
+  await expect(map).toHaveAttribute("data-shadow-time", /\d{2}:\d{2}/);
+  await expect(page.getByTestId("path-playback")).toHaveAttribute(
+    "aria-label",
+    "Pause path replay",
+  );
+  const europeView = await map.getAttribute("viewBox");
+  await page.getByTestId("path-full-view").click();
+  await expect(map).not.toHaveAttribute("viewBox", europeView ?? "");
+  await page.getByTestId("path-playback").click();
+  const pausedTime = await map.getAttribute("data-shadow-time");
+  await page.waitForTimeout(100);
+  await expect(map).toHaveAttribute("data-shadow-time", pausedTime ?? "");
+  await page.getByTestId("path-restart").click();
+  await expect(page.getByTestId("path-playback")).toHaveAttribute(
+    "aria-label",
+    "Pause path replay",
+  );
   await page.keyboard.press("Escape");
   await expect(opener).toBeFocused();
+  await expect(page.getByTestId("eclipse-timeline")).toHaveValue(previousTime);
 });
 
 test("copies a versioned share URL", async ({ page }) => {

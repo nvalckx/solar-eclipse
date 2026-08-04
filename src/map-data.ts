@@ -2,6 +2,23 @@ import { NATURAL_EARTH_LAND_PATH } from "./generated-land-path";
 
 export type Coordinate = readonly [longitude: number, latitude: number];
 export type TimedPathPoint = { timeUtc: string; coordinate: Coordinate };
+export type TimedPathFrame = {
+  timeUtc: string;
+  timestampMs: number;
+  north: Coordinate;
+  south: Coordinate;
+  center: Coordinate;
+};
+
+export type PathShadowState = {
+  timestampMs: number;
+  timeUtc: string;
+  north: Coordinate;
+  south: Coordinate;
+  center: Coordinate;
+  widthKm: number;
+  radiusKm: number;
+};
 
 const point = (
   latDegrees: number,
@@ -325,6 +342,80 @@ export const TOTALITY_BAND: Coordinate[] = [
   ...TOTALITY_NORTH,
   ...[...TOTALITY_SOUTH].reverse(),
 ];
+
+const PATH_DATE = "2026-08-12";
+const pathTimestamp = (timeUtc: string) =>
+  Date.parse(`${PATH_DATE}T${timeUtc}:00Z`);
+
+export const TOTALITY_FRAMES: TimedPathFrame[] = ROWS.map((row) => ({
+  timeUtc: row.timeUtc,
+  timestampMs: pathTimestamp(row.timeUtc),
+  north: row.north ?? END_NORTH,
+  south: row.south,
+  center: row.center,
+}));
+
+export const PATH_START_MS = TOTALITY_FRAMES[0].timestampMs;
+export const PATH_END_MS =
+  TOTALITY_FRAMES[TOTALITY_FRAMES.length - 1].timestampMs;
+
+const EARTH_RADIUS_KM = 6371;
+const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+
+const distanceKm = (a: Coordinate, b: Coordinate) => {
+  const latitudeA = toRadians(a[1]);
+  const latitudeB = toRadians(b[1]);
+  const deltaLatitude = latitudeB - latitudeA;
+  const longitudeDelta = ((b[0] - a[0] + 540) % 360) - 180;
+  const deltaLongitude = toRadians(longitudeDelta);
+  const haversine =
+    Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(latitudeA) *
+      Math.cos(latitudeB) *
+      Math.sin(deltaLongitude / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(haversine));
+};
+
+export const interpolateCoordinate = (
+  from: Coordinate,
+  to: Coordinate,
+  progress: number,
+): Coordinate => {
+  const longitudeDelta = ((to[0] - from[0] + 540) % 360) - 180;
+  return [
+    from[0] + longitudeDelta * progress,
+    from[1] + (to[1] - from[1]) * progress,
+  ];
+};
+
+export function pathShadowAt(timestampMs: number): PathShadowState {
+  const clamped = Math.min(PATH_END_MS, Math.max(PATH_START_MS, timestampMs));
+  let index = TOTALITY_FRAMES.findIndex(
+    (frame, frameIndex) =>
+      clamped >= frame.timestampMs &&
+      (TOTALITY_FRAMES[frameIndex + 1]?.timestampMs ?? Infinity) >= clamped,
+  );
+  if (index < 0) index = TOTALITY_FRAMES.length - 1;
+
+  const from = TOTALITY_FRAMES[index];
+  const to = TOTALITY_FRAMES[index + 1] ?? from;
+  const duration = to.timestampMs - from.timestampMs;
+  const progress = duration ? (clamped - from.timestampMs) / duration : 0;
+  const north = interpolateCoordinate(from.north, to.north, progress);
+  const south = interpolateCoordinate(from.south, to.south, progress);
+  const center = interpolateCoordinate(from.center, to.center, progress);
+  const widthKm = distanceKm(north, south);
+
+  return {
+    timestampMs: clamped,
+    timeUtc: new Date(clamped).toISOString().slice(11, 16),
+    north,
+    south,
+    center,
+    widthKm,
+    radiusKm: widthKm / 2,
+  };
+}
 
 export const MAP_SOURCE = {
   path: "Eclipse Predictions by Fred Espenak, NASA’s GSFC",

@@ -16,6 +16,7 @@ import { ShareDialog } from "./components/ShareDialog";
 import { SkyCanvas } from "./components/SkyCanvas";
 import { Timeline } from "./components/Timeline";
 import { DirectionCompass } from "./components/DirectionCompass";
+import { PATH_END_MS, PATH_START_MS } from "./map-data";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -98,6 +99,9 @@ export function App() {
   const [showPath, setShowPath] = useState(false);
   const [shareFallback, setShareFallback] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const pathReturnRef = useRef<{ nowMs: number; isPlaying: boolean } | null>(
+    null,
+  );
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const pathButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
@@ -125,6 +129,7 @@ export function App() {
 
   useEffect(() => {
     if (!isPlaying) return;
+    const playbackEnd = showPath ? PATH_END_MS : timeRange.end;
     let frame = 0;
     let previous = performance.now();
     const tick = (time: number) => {
@@ -132,9 +137,9 @@ export function App() {
       previous = time;
       setNowMs((value) => {
         const next = value + elapsed * speed;
-        if (next >= timeRange.end) {
+        if (next >= playbackEnd) {
           setIsPlaying(false);
-          return timeRange.end;
+          return playbackEnd;
         }
         return next;
       });
@@ -142,7 +147,7 @@ export function App() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [isPlaying, speed, timeRange.end]);
+  }, [isPlaying, showPath, speed, timeRange.end]);
 
   useEffect(() => {
     try {
@@ -161,6 +166,31 @@ export function App() {
   ) => {
     setter(false);
     requestAnimationFrame(() => target.current?.focus());
+  };
+
+  const openPath = () => {
+    pathReturnRef.current = { nowMs, isPlaying };
+    const reducedMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    setNowMs(PATH_START_MS);
+    setIsPlaying(!reducedMotion);
+    setShowPath(true);
+    setAnnouncement(
+      reducedMotion
+        ? "Path replay opened at the first frame."
+        : "Path replay started.",
+    );
+  };
+
+  const closePath = () => {
+    const previous = pathReturnRef.current;
+    setShowPath(false);
+    setIsPlaying(previous?.isPlaying ?? false);
+    setNowMs(previous?.nowMs ?? nowMs);
+    pathReturnRef.current = null;
+    setAnnouncement("Path replay closed.");
+    requestAnimationFrame(() => pathButtonRef.current?.focus());
   };
 
   const applyLocation = (next: ObserverLocation) => {
@@ -460,7 +490,7 @@ export function App() {
             ref={pathButtonRef}
             className="info-card path-card"
             data-testid="open-map"
-            onClick={() => setShowPath(true)}
+            onClick={openPath}
           >
             <span className="path-art" aria-hidden="true">
               <i />
@@ -532,7 +562,21 @@ export function App() {
       {showPath && (
         <PathDialog
           location={location}
-          onClose={() => closeAndRestore(setShowPath, pathButtonRef)}
+          replayTimeMs={nowMs}
+          isPlaying={isPlaying}
+          onPlayingChange={(playing) => {
+            if (playing && nowMs >= PATH_END_MS) setNowMs(PATH_START_MS);
+            setIsPlaying(playing);
+            setAnnouncement(
+              playing ? "Path replay started." : "Path replay paused.",
+            );
+          }}
+          onRestart={() => {
+            setNowMs(PATH_START_MS);
+            setIsPlaying(true);
+            setAnnouncement("Path replay restarted.");
+          }}
+          onClose={closePath}
         />
       )}
       {shareFallback && (
