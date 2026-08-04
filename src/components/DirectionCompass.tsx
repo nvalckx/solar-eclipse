@@ -21,21 +21,37 @@ function markerStyle(azimuth: number, radius: number): CSSProperties {
 
 function positionLabel(name: string, position: HorizontalPosition) {
   const altitude = Math.round(position.altitudeDeg);
-  return `${name} ${Math.round(position.azimuthDeg)} degrees ${directionFor(
-    position.azimuthDeg,
-  )}, ${altitude} degrees ${altitude >= 0 ? "above" : "below"} the horizon`;
+  return [
+    name,
+    `${Math.round(position.azimuthDeg)} degrees`,
+    directionFor(position.azimuthDeg),
+    `${altitude} degrees`,
+    altitude >= 0 ? "above" : "below",
+    "the horizon",
+  ].join(" ");
 }
 
 export function DirectionCompass({ sun, moon }: Props) {
+  const accessibilityLabel = [
+    "Direction compass.",
+    `${positionLabel("Sun", sun)}.`,
+    `${positionLabel("Moon", moon)}.`,
+  ].join(" ");
+  const sunMarkerClass =
+    sun.altitudeDeg < 0
+      ? "compass-marker compass-sun below-horizon"
+      : "compass-marker compass-sun";
+  const moonMarkerClass =
+    moon.altitudeDeg < 0
+      ? "compass-marker compass-moon below-horizon"
+      : "compass-marker compass-moon";
+
   return (
     <div
       className="direction-compass"
       data-testid="direction-compass"
       role="img"
-      aria-label={`Direction compass. ${positionLabel("Sun", sun)}. ${positionLabel(
-        "Moon",
-        moon,
-      )}.`}
+      aria-label={accessibilityLabel}
     >
       <span className="compass-kicker">LOOK TOWARD</span>
       <div className="compass-dial" aria-hidden="true">
@@ -45,18 +61,14 @@ export function DirectionCompass({ sun, moon }: Props) {
         <span className="compass-cardinal compass-west">W</span>
         <span className="compass-center" />
         <span
-          className={`compass-marker compass-sun${
-            sun.altitudeDeg < 0 ? " below-horizon" : ""
-          }`}
+          className={sunMarkerClass}
           style={markerStyle(sun.azimuthDeg, 38)}
           title={positionLabel("Sun", sun)}
         >
           ☀
         </span>
         <span
-          className={`compass-marker compass-moon${
-            moon.altitudeDeg < 0 ? " below-horizon" : ""
-          }`}
+          className={moonMarkerClass}
           style={markerStyle(moon.azimuthDeg, 38)}
           title={positionLabel("Moon", moon)}
         >
