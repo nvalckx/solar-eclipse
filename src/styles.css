@@ -695,7 +695,7 @@ h1 em {
   flex-direction: column;
   gap: 10px;
   color: var(--quiet);
-  font: 12px var(--mono);
+  font: 12px/14px var(--mono);
 }
 .footer a {
   color: #9eafc1;
