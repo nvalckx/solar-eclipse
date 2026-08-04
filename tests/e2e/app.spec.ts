@@ -113,6 +113,31 @@ test("switches views and controls the timeline and playback", async ({
   );
 });
 
+test("shows the live clock, trajectory contacts, and AR alignment handoff", async ({
+  page,
+}) => {
+  await page.locator("#live").scrollIntoViewIfNeeded();
+  await expect(
+    page.getByRole("heading", { name: /follow it live/i }),
+  ).toBeVisible();
+  await expect(page.getByTestId("live-current-time")).toBeVisible();
+  await expect(page.getByTestId("live-countdown")).toBeVisible();
+  await expect(page.getByTestId("live-event-c1")).toContainText(
+    /partial eclipse begins/i,
+  );
+  const arCard = page.locator(".ar-ready-card");
+  await expect(arCard).toHaveAttribute("data-ar-target-azimuth", /\d+/);
+  await expect(arCard).toHaveAttribute("data-ar-target-altitude", /-?\d+/);
+  await page.getByTestId("live-event-c1").click();
+  const firstContactTime = await page
+    .getByTestId("eclipse-timeline")
+    .inputValue();
+  await page.getByTestId("live-event-max").click();
+  await expect(page.getByTestId("eclipse-timeline")).not.toHaveValue(
+    firstContactTime,
+  );
+});
+
 test("opens the verified path dialog and restores focus", async ({ page }) => {
   const previousTime = await page.getByTestId("eclipse-timeline").inputValue();
   const opener = page.getByTestId("open-map");

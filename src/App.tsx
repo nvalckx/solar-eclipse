@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
 import { DEFAULT_CITY } from "./city-catalog";
 import { calculateSkyState, eclipseWindowFor } from "./eclipse-logic";
 import type { ObserverLocation, SkyMode, SkyState } from "./types";
@@ -16,6 +15,7 @@ import { ShareDialog } from "./components/ShareDialog";
 import { SkyCanvas } from "./components/SkyCanvas";
 import { Timeline } from "./components/Timeline";
 import { DirectionCompass } from "./components/DirectionCompass";
+import { LiveView } from "./components/LiveView";
 import { PATH_END_MS, PATH_START_MS } from "./map-data";
 
 const clamp = (value: number, min: number, max: number) =>
@@ -93,6 +93,7 @@ export function App() {
   const [location, setLocation] = useState(initial.location);
   const [mode, setMode] = useState<SkyMode>(initial.mode);
   const [nowMs, setNowMs] = useState(initial.nowMs);
+  const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(60);
   const [showLocation, setShowLocation] = useState(false);
@@ -103,6 +104,7 @@ export function App() {
     null,
   );
   const locationButtonRef = useRef<HTMLButtonElement>(null);
+  const locationReturnRef = useRef<HTMLButtonElement | null>(null);
   const pathButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -126,6 +128,13 @@ export function App() {
   const isTotalLocation =
     !!eclipseWindow.totalStart && !!eclipseWindow.totalEnd;
   const description = `${mode === "sky" ? "Sky view" : "Magnified close-up"}. ${eventLabel(state)}. Sun altitude ${Math.round(state.sun.altitudeDeg)} degrees, azimuth ${Math.round(state.sun.azimuthDeg)} degrees.`;
+
+  useEffect(() => {
+    const updateClock = () => setLiveNowMs(Date.now());
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -159,14 +168,6 @@ export function App() {
       // Storage is an enhancement; private/locked-down browsers can decline it.
     }
   }, [location]);
-
-  const closeAndRestore = (
-    setter: (value: boolean) => void,
-    target: RefObject<HTMLButtonElement | null>,
-  ) => {
-    setter(false);
-    requestAnimationFrame(() => target.current?.focus());
-  };
 
   const openPath = () => {
     pathReturnRef.current = { nowMs, isPlaying };
@@ -202,7 +203,21 @@ export function App() {
     setAnnouncement(
       `Location changed to ${next.label}. Maximum eclipse selected.`,
     );
-    requestAnimationFrame(() => locationButtonRef.current?.focus());
+    requestAnimationFrame(() =>
+      (locationReturnRef.current ?? locationButtonRef.current)?.focus(),
+    );
+  };
+
+  const openLocation = (opener: HTMLButtonElement) => {
+    locationReturnRef.current = opener;
+    setShowLocation(true);
+  };
+
+  const closeLocation = () => {
+    setShowLocation(false);
+    requestAnimationFrame(() =>
+      (locationReturnRef.current ?? locationButtonRef.current)?.focus(),
+    );
   };
 
   const selectTime = (time: number) => {
@@ -212,6 +227,16 @@ export function App() {
     setAnnouncement(
       `Selected ${localDateTime(new Date(next), location.timezone, true)}.`,
     );
+  };
+
+  const previewFromLive = (date: Date) => {
+    selectTime(date.getTime());
+    document.querySelector("#simulator")?.scrollIntoView({
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
   };
 
   const changePlaying = (playing: boolean) => {
@@ -267,6 +292,9 @@ export function App() {
         </a>
         <div className="topbar-actions">
           <span className="event-date">12 AUGUST 2026</span>
+          <a className="live-nav-link" href="#live">
+            <i aria-hidden="true" /> Live view
+          </a>
           <button
             ref={shareButtonRef}
             className="secondary-button"
@@ -292,12 +320,16 @@ export function App() {
               Explore how the Moon crosses the Sun from your sky. Choose a
               place, move through the event, and know exactly where to look.
             </p>
+            <a className="hero-live-cta" href="#live">
+              <i aria-hidden="true" /> Open the eclipse-day live view
+              <span aria-hidden="true">↓</span>
+            </a>
             <button
               ref={locationButtonRef}
               className="location-chip"
               data-testid="location-picker"
               aria-haspopup="dialog"
-              onClick={() => setShowLocation(true)}
+              onClick={(event) => openLocation(event.currentTarget)}
             >
               <span className="pin">⌖</span>
               <span>
@@ -407,6 +439,18 @@ export function App() {
             />
           </section>
         </section>
+
+        <LiveView
+          location={location}
+          window={eclipseWindow}
+          now={new Date(liveNowMs)}
+          formatTime={(date, full) =>
+            localDateTime(date, location.timezone, full)
+          }
+          zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
+          onChangeLocation={openLocation}
+          onPreviewTime={previewFromLive}
+        />
 
         <section className="insight-grid" aria-label="Local eclipse details">
           <article className="info-card circumstances-card">
@@ -556,7 +600,7 @@ export function App() {
         <LocationDialog
           current={location}
           onConfirm={applyLocation}
-          onClose={() => closeAndRestore(setShowLocation, locationButtonRef)}
+          onClose={closeLocation}
         />
       )}
       {showPath && (
