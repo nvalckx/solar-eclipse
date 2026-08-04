@@ -30,6 +30,13 @@ const CITIES: Array<Omit<ObserverLocation, "source">> = [
     timezone: "Europe/Amsterdam",
   },
   {
+    latitude: 39.5696,
+    longitude: 2.6502,
+    elevationMeters: 24,
+    label: "Mallorca, Spain",
+    timezone: "Europe/Madrid",
+  },
+  {
     latitude: 51.7755,
     longitude: 5.8757,
     elevationMeters: 10,
@@ -154,6 +161,10 @@ export const CITY_CATALOG: ObserverLocation[] = CITIES.map((city) => ({
   ...city,
   source: "preset",
 }));
+
+export const FEATURED_CITY_CATALOG = CITY_CATALOG.filter(
+  (city) => city.label !== "Pitch&Putt Molenhoek",
+).slice(0, 8);
 
 export const DEFAULT_CITY =
   CITY_CATALOG.find((city) => city.label === "Amsterdam, Netherlands") ??

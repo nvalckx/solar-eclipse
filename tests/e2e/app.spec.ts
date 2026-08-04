@@ -37,6 +37,7 @@ test("searches featured places and persists the selection", async ({
   );
   await page.getByTestId("location-picker").click();
   await expect(page.getByTestId("place-Amsterdam, Netherlands")).toBeVisible();
+  await expect(page.getByTestId("place-Mallorca, Spain")).toBeVisible();
   await page.getByTestId("city-search").fill("Atlantis");
   await expect(page.getByText(/no featured match/i)).toBeVisible();
   await page.getByTestId("city-search").fill("Copenhagen");
@@ -62,6 +63,7 @@ test("zooms the location picker map", async ({ page }) => {
 
 test("reveals the Molenhoek golf easter egg", async ({ page }) => {
   await page.getByTestId("location-picker").click();
+  await page.getByTestId("city-search").fill("Molenhoek");
   await page.getByTestId("place-Pitch&Putt Molenhoek").click();
   await expect(page.getByTestId("sky-canvas")).toHaveAttribute(
     "data-golf-hole",

@@ -9,21 +9,53 @@ const project = ([longitude, latitude]) => [
   ((90 - latitude) / 180) * HEIGHT,
 ];
 
-function linePath(coordinates) {
-  return coordinates
-    .map((coordinate, index) => {
-      const [x, y] = project(coordinate);
-      return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
+function linePaths(coordinates) {
+  const paths = [];
+  let current = [];
+
+  for (const coordinate of coordinates) {
+    const point = project(coordinate);
+    const previous = current.at(-1);
+
+    // A Natural Earth ring can cross the ±180° meridian. In an equirectangular
+    // SVG, connecting those points directly draws a false line across the map.
+    if (previous && Math.abs(point[0] - previous[0]) > WIDTH / 2) {
+      paths.push(current);
+      current = [];
+    }
+    current.push(point);
+  }
+
+  if (current.length) paths.push(current);
+  if (paths.length < 2) return paths;
+
+  // A ring may start between two seam crossings. Join the fragments that
+  // meet at the ring's start point so each closed fragment spans seam to seam.
+  const first = paths.shift();
+  const last = paths.pop();
+  return [[...(last ?? []), ...(first?.slice(1) ?? [])], ...paths];
+}
+
+function linePath(points) {
+  return points
+    .map(
+      ([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`,
+    )
+    .join("");
+}
+
+function ringPath(coordinates) {
+  return linePaths(coordinates)
+    .map((points) => `${linePath(points)}Z`)
     .join("");
 }
 
 function geometryPath(geometry) {
   if (geometry.type === "Polygon")
-    return geometry.coordinates.map((ring) => `${linePath(ring)}Z`).join("");
+    return geometry.coordinates.map(ringPath).join("");
   if (geometry.type === "MultiPolygon")
     return geometry.coordinates
-      .flatMap((polygon) => polygon.map((ring) => `${linePath(ring)}Z`))
+      .flatMap((polygon) => polygon.map(ringPath))
       .join("");
   throw new Error(`Unsupported Natural Earth geometry: ${geometry.type}`);
 }

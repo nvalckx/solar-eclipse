@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CITY_CATALOG } from "../city-catalog";
+import { CITY_CATALOG, FEATURED_CITY_CATALOG } from "../city-catalog";
 import { isValidLocation, isValidTimezone } from "../eclipse-logic";
 import type { ObserverLocation } from "../types";
 import { EclipseMap } from "./EclipseMap";
@@ -42,7 +42,7 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
       ? CITY_CATALOG.filter((place) =>
           normalizeSearch(place.label).includes(normalized),
         ).slice(0, 10)
-      : CITY_CATALOG.slice(0, 8);
+      : FEATURED_CITY_CATALOG;
   }, [query]);
 
   useEffect(() => {
