@@ -15,6 +15,7 @@ import { PathDialog } from "./components/PathDialog";
 import { ShareDialog } from "./components/ShareDialog";
 import { SkyCanvas } from "./components/SkyCanvas";
 import { Timeline } from "./components/Timeline";
+import { DirectionCompass } from "./components/DirectionCompass";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -341,6 +342,7 @@ export function App() {
                   ? "Magnified equally · overlap remains accurate"
                   : "Disks enlarged equally · altitude and bearing are true"}
               </div>
+              <DirectionCompass sun={state.sun} moon={state.moon} />
               <div className="sky-readout">
                 <span>
                   Sun{" "}

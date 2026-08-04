@@ -376,6 +376,132 @@ h1 em {
   color: #d9e4ef;
   font: 12px var(--mono);
 }
+.direction-compass {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 142px;
+  padding: 9px 9px 8px;
+  border: 1px solid rgba(232, 241, 252, 0.16);
+  border-radius: 9px;
+  background: rgba(4, 12, 22, 0.78);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+}
+.compass-kicker {
+  display: block;
+  color: #d9e4ef;
+  font: 600 10px var(--mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.compass-dial {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 5px auto 7px;
+  border: 1px solid rgba(211, 227, 243, 0.42);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px),
+    repeating-conic-gradient(
+      from -1deg,
+      rgba(211, 227, 243, 0.38) 0deg 1deg,
+      transparent 1deg 15deg
+    );
+  box-shadow: inset 0 0 0 7px rgba(3, 10, 19, 0.3);
+}
+.compass-cardinal {
+  position: absolute;
+  color: #d9e4ef;
+  font: 600 10px var(--mono);
+}
+.compass-north {
+  top: 7px;
+  left: 50%;
+  color: var(--orange-bright);
+  transform: translateX(-50%);
+}
+.compass-east {
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+}
+.compass-south {
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.compass-west {
+  top: 50%;
+  left: 7px;
+  transform: translateY(-50%);
+}
+.compass-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border: 1px solid #fff3d6;
+  border-radius: 50%;
+  background: var(--orange);
+  transform: translate(-50%, -50%);
+}
+.compass-marker {
+  position: absolute;
+  z-index: 1;
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fff3d6;
+  border-radius: 50%;
+  color: #07101c;
+  font-size: 15px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+.compass-sun {
+  background: #ffc86b;
+  box-shadow: 0 0 12px rgba(255, 200, 107, 0.72);
+}
+.compass-moon {
+  background: #c6d7eb;
+  box-shadow: 0 0 10px rgba(198, 215, 235, 0.38);
+}
+.compass-marker.below-horizon {
+  opacity: 0.48;
+}
+.compass-legend {
+  display: grid;
+  gap: 4px;
+  color: #c3d0de;
+  font: 10px var(--mono);
+}
+.compass-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.compass-legend i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+.compass-legend-sun {
+  background: #ffc86b;
+}
+.compass-legend-moon {
+  background: #c6d7eb;
+}
+.compass-legend b {
+  margin-left: auto;
+  color: #fff;
+  font-weight: 600;
+}
 .sky-readout {
   position: absolute;
   left: 14px;
