@@ -207,19 +207,17 @@ test("has no detectable accessibility violations or horizontal overflow", async 
 
 test("matches the totality layout snapshots", async ({ page }, testInfo) => {
   test.skip(
-    !["chromium", "mobile-chromium"].includes(testInfo.project.name),
-    "Visual baselines use Chromium rendering.",
+    testInfo.project.name !== "chromium",
+    "Visual baselines use the stable desktop Chromium project.",
   );
   await page.getByTestId("maximum-time").click();
-  if (testInfo.project.name === "chromium") {
-    await expect(page).toHaveScreenshot("totality-sky.png", {
-      fullPage: true,
-      animations: "disabled",
-      caret: "hide",
-      threshold: 0.25,
-      maxDiffPixelRatio: 0.02,
-    });
-  }
+  await expect(page).toHaveScreenshot("totality-sky.png", {
+    fullPage: true,
+    animations: "disabled",
+    caret: "hide",
+    threshold: 0.25,
+    maxDiffPixelRatio: 0.02,
+  });
   await page.getByTestId("mode-closeup").click();
   await expect(page.locator("#simulator")).toHaveScreenshot(
     "totality-closeup.png",
