@@ -16,6 +16,7 @@ import { SkyCanvas } from "./components/SkyCanvas";
 import { Timeline } from "./components/Timeline";
 import { DirectionCompass } from "./components/DirectionCompass";
 import { LiveView } from "./components/LiveView";
+import { PhoneAlignmentDialog } from "./components/PhoneAlignmentDialog";
 import { PATH_END_MS, PATH_START_MS } from "./map-data";
 
 const clamp = (value: number, min: number, max: number) =>
@@ -98,6 +99,7 @@ export function App() {
   const [speed, setSpeed] = useState(60);
   const [showLocation, setShowLocation] = useState(false);
   const [showPath, setShowPath] = useState(false);
+  const [showAlignment, setShowAlignment] = useState(false);
   const [shareFallback, setShareFallback] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const pathReturnRef = useRef<{ nowMs: number; isPlaying: boolean } | null>(
@@ -107,6 +109,7 @@ export function App() {
   const locationReturnRef = useRef<HTMLButtonElement | null>(null);
   const pathButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
+  const alignmentReturnRef = useRef<HTMLButtonElement | null>(null);
 
   const eclipseWindow = useMemo(() => eclipseWindowFor(location), [location]);
   const timeRange = useMemo(
@@ -205,6 +208,16 @@ export function App() {
     );
     requestAnimationFrame(() =>
       (locationReturnRef.current ?? locationButtonRef.current)?.focus(),
+    );
+  };
+
+  const updateAlignmentLocation = (next: ObserverLocation) => {
+    const nextWindow = eclipseWindowFor(next);
+    setLocation(next);
+    setNowMs(nextWindow.peak.getTime());
+    setIsPlaying(false);
+    setAnnouncement(
+      `Phone location refreshed. Maximum eclipse recalculated for ${next.label}.`,
     );
   };
 
@@ -450,6 +463,11 @@ export function App() {
           zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
           onChangeLocation={openLocation}
           onPreviewTime={previewFromLive}
+          onStartAlignment={(opener) => {
+            alignmentReturnRef.current = opener;
+            setShowAlignment(true);
+            setAnnouncement("Phone alignment setup opened.");
+          }}
         />
 
         <section className="insight-grid" aria-label="Local eclipse details">
@@ -621,6 +639,21 @@ export function App() {
             setAnnouncement("Path replay restarted.");
           }}
           onClose={closePath}
+        />
+      )}
+      {showAlignment && (
+        <PhoneAlignmentDialog
+          location={location}
+          now={new Date(liveNowMs)}
+          formatTime={(date, full) =>
+            localDateTime(date, location.timezone, full)
+          }
+          onLocationChange={updateAlignmentLocation}
+          onClose={() => {
+            setShowAlignment(false);
+            setAnnouncement("Phone alignment closed.");
+            requestAnimationFrame(() => alignmentReturnRef.current?.focus());
+          }}
         />
       )}
       {shareFallback && (

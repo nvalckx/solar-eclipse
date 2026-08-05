@@ -12,6 +12,7 @@ type Props = {
   zoneName: string;
   onChangeLocation: (opener: HTMLButtonElement) => void;
   onPreviewTime: (date: Date) => void;
+  onStartAlignment: (opener: HTMLButtonElement) => void;
 };
 
 const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -28,6 +29,7 @@ export function LiveView({
   zoneName,
   onChangeLocation,
   onPreviewTime,
+  onStartAlignment,
 }: Props) {
   const situation = liveSituation(now, window);
   const currentState = useMemo(
@@ -168,13 +170,12 @@ export function LiveView({
             </span>
           </div>
           <div className="ar-copy">
-            <span className="kicker">AR SKY GUIDE · SENSOR-READY</span>
+            <span className="kicker">PHONE SKY GUIDE · CAMERA + COMPASS</span>
             <h3>Point your phone. Find the Sun.</h3>
             <p>
-              This live view already produces the target bearing, altitude, and
-              event time needed by a future camera overlay. Phone compass and
-              gyroscope input can drive this reticle without changing the
-              eclipse calculations.
+              Check your viewing direction before eclipse day, or follow the
+              event live. Your phone’s camera, compass, and tilt sensors guide
+              the reticle to the calculated position in your sky.
             </p>
             <dl className="ar-target-readout">
               <div>
@@ -195,12 +196,14 @@ export function LiveView({
             </dl>
             <button
               className="secondary-button"
-              onClick={() => onPreviewTime(arTargetDate)}
+              data-testid="start-phone-alignment"
+              onClick={(event) => onStartAlignment(event.currentTarget)}
             >
-              Preview this alignment
+              Start phone alignment
             </button>
             <small className="ar-note">
-              Camera and motion permissions are not requested in this release.
+              Permissions are requested only after you start. A manual guide is
+              always available.
             </small>
           </div>
         </article>

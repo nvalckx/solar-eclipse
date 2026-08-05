@@ -138,6 +138,154 @@ test("shows the live clock, trajectory contacts, and AR alignment handoff", asyn
   );
 });
 
+test("starts camera alignment with an absolute compass and restores focus", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    class MockOrientationEvent extends Event {
+      static requestPermission = async () => "granted";
+    }
+    Object.defineProperty(window, "DeviceOrientationEvent", {
+      configurable: true,
+      value: MockOrientationEvent,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => new MediaStream() },
+    });
+    HTMLMediaElement.prototype.play = async () => undefined;
+  });
+
+  const opener = page.getByTestId("start-phone-alignment");
+  await opener.click();
+  await expect(page.getByTestId("phone-alignment-dialog")).toBeVisible();
+  await expect(page.getByText(/protect your eyes and camera/i)).toBeVisible();
+  await page.getByTestId("begin-phone-alignment").click();
+  await expect(page.getByTestId("alignment-event-max")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.evaluate(() => {
+    const event = new Event("deviceorientationabsolute");
+    for (const [key, value] of Object.entries({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+    })) {
+      Object.defineProperty(event, key, { value });
+    }
+    window.dispatchEvent(event);
+  });
+  await expect(page.locator(".alignment-target")).toHaveAttribute(
+    "data-quality",
+    "good",
+  );
+  await expect(page.getByTestId("alignment-camera")).toBeVisible();
+  await page.getByTestId("close-phone-alignment").click();
+  await expect(opener).toBeFocused();
+});
+
+test("falls back to a manual sky finder when camera and motion are denied", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    class MockOrientationEvent extends Event {
+      static requestPermission = async () => "denied";
+    }
+    Object.defineProperty(window, "DeviceOrientationEvent", {
+      configurable: true,
+      value: MockOrientationEvent,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => Promise.reject(new Error("denied")),
+      },
+    });
+  });
+  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("begin-phone-alignment").click();
+  await expect(page.getByText(/motion access was denied/i)).toBeVisible();
+  await expect(page.getByText(/camera unavailable/i)).toBeVisible();
+  await expect(
+    page.getByTestId("phone-alignment-dialog").getByText("Manual guide", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".alignment-eclipse")).toHaveClass(/visible/);
+  const accessibility = await new AxeBuilder({ page })
+    .include("[data-testid='phone-alignment-dialog']")
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+  expect(
+    await page
+      .getByTestId("phone-alignment-dialog")
+      .evaluate((dialog) => dialog.scrollWidth - dialog.clientWidth),
+  ).toBeLessThanOrEqual(0);
+});
+
+test("refreshes the phone location before alignment", async ({
+  page,
+  context,
+}) => {
+  await context.setGeolocation({
+    latitude: 41.65,
+    longitude: -0.89,
+    accuracy: 24,
+  });
+  await context.grantPermissions(["geolocation"], {
+    origin: "http://127.0.0.1:4173",
+  });
+  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("refresh-alignment-location").click();
+  await expect(
+    page.getByTestId("phone-alignment-dialog").getByRole("status"),
+  ).toContainText(/accurate to about 24 m/i);
+  await expect(
+    page
+      .getByTestId("phone-alignment-dialog")
+      .getByText("Your current location"),
+  ).toBeVisible();
+});
+
+test("auto-follows the live eclipse while local contacts are in progress", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-08-12T18:29:20Z") });
+  await page.goto(
+    "./?lat=41.65&lon=-0.89&elev=250&tz=Europe%2FMadrid&label=Zaragoza%2C%20Spain",
+  );
+  await page.evaluate(() => {
+    class MockOrientationEvent extends Event {
+      static requestPermission = async () => "denied";
+    }
+    Object.defineProperty(window, "DeviceOrientationEvent", {
+      configurable: true,
+      value: MockOrientationEvent,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => Promise.reject(new Error("denied")) },
+    });
+  });
+  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("begin-phone-alignment").click();
+  await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("alignment-event-max").click();
+  await expect(
+    page.getByRole("button", { name: /return to live/i }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /return to live/i }).click();
+  await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 test("opens the verified path dialog and restores focus", async ({ page }) => {
   const previousTime = await page.getByTestId("eclipse-timeline").inputValue();
   const opener = page.getByTestId("open-map");
