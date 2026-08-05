@@ -17,7 +17,17 @@ import { Timeline } from "./components/Timeline";
 import { DirectionCompass } from "./components/DirectionCompass";
 import { LiveView } from "./components/LiveView";
 import { PhoneAlignmentDialog } from "./components/PhoneAlignmentDialog";
+import { NotificationDialog } from "./components/NotificationDialog";
 import { PATH_END_MS, PATH_START_MS } from "./map-data";
+import {
+  ALERTS_STORAGE_KEY,
+  alertBody,
+  buildAlertSchedule,
+  DEFAULT_ALERT_PREFERENCES,
+  parseStoredAlertPreferences,
+  serializeAlertPreferences,
+  type AlertPreferences,
+} from "./notifications";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -28,6 +38,16 @@ function readSavedLocation() {
     return parseStoredLocation(localStorage.getItem(LOCATION_STORAGE_KEY));
   } catch {
     return null;
+  }
+}
+
+function readSavedAlerts() {
+  try {
+    return parseStoredAlertPreferences(
+      localStorage.getItem(ALERTS_STORAGE_KEY),
+    );
+  } catch {
+    return DEFAULT_ALERT_PREFERENCES;
   }
 }
 
@@ -100,6 +120,8 @@ export function App() {
   const [showLocation, setShowLocation] = useState(false);
   const [showPath, setShowPath] = useState(false);
   const [showAlignment, setShowAlignment] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [alertPreferences, setAlertPreferences] = useState(readSavedAlerts);
   const [shareFallback, setShareFallback] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const pathReturnRef = useRef<{ nowMs: number; isPlaying: boolean } | null>(
@@ -110,6 +132,7 @@ export function App() {
   const pathButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const alignmentReturnRef = useRef<HTMLButtonElement | null>(null);
+  const notificationReturnRef = useRef<HTMLButtonElement | null>(null);
 
   const eclipseWindow = useMemo(() => eclipseWindowFor(location), [location]);
   const timeRange = useMemo(
@@ -171,6 +194,51 @@ export function App() {
       // Storage is an enhancement; private/locked-down browsers can decline it.
     }
   }, [location]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        ALERTS_STORAGE_KEY,
+        serializeAlertPreferences(alertPreferences),
+      );
+    } catch {
+      // Alerts still work for this visit if storage is unavailable.
+    }
+  }, [alertPreferences]);
+
+  useEffect(() => {
+    if (
+      !alertPreferences.enabled ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted"
+    )
+      return;
+
+    const timers: number[] = [];
+    const maximumDelay = 2_147_000_000;
+    const schedule = (alert: ReturnType<typeof buildAlertSchedule>[number]) => {
+      const arm = () => {
+        const delay = alert.notifyAt.getTime() - Date.now();
+        if (delay <= 0) {
+          try {
+            new Notification(`Eclipse/26 · ${alert.label}`, {
+              body: alertBody(alert, location, alertPreferences.leadMinutes),
+              icon: "./apple-touch-icon.png",
+              tag: `eclipse26-${alert.key}`,
+            });
+          } catch {
+            // Some mobile browsers expose permission without a constructible API.
+          }
+          return;
+        }
+        timers.push(window.setTimeout(arm, Math.min(delay, maximumDelay)));
+      };
+      arm();
+    };
+
+    buildAlertSchedule(eclipseWindow, alertPreferences).forEach(schedule);
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [alertPreferences, eclipseWindow, location]);
 
   const openPath = () => {
     pathReturnRef.current = { nowMs, isPlaying };
@@ -468,6 +536,16 @@ export function App() {
             setShowAlignment(true);
             setAnnouncement("Phone alignment setup opened.");
           }}
+          alertsEnabled={
+            alertPreferences.enabled &&
+            "Notification" in window &&
+            Notification.permission === "granted"
+          }
+          onConfigureAlerts={(opener) => {
+            notificationReturnRef.current = opener;
+            setShowNotifications(true);
+            setAnnouncement("Eclipse alert setup opened.");
+          }}
         />
 
         <section className="insight-grid" aria-label="Local eclipse details">
@@ -653,6 +731,29 @@ export function App() {
             setShowAlignment(false);
             setAnnouncement("Phone alignment closed.");
             requestAnimationFrame(() => alignmentReturnRef.current?.focus());
+          }}
+        />
+      )}
+      {showNotifications && (
+        <NotificationDialog
+          location={location}
+          window={eclipseWindow}
+          preferences={alertPreferences}
+          formatTime={(date, full) =>
+            localDateTime(date, location.timezone, full)
+          }
+          onSave={(next: AlertPreferences) => {
+            setAlertPreferences(next);
+            setAnnouncement(
+              next.enabled
+                ? `Eclipse alerts saved for ${location.label}.`
+                : "Eclipse alerts turned off.",
+            );
+          }}
+          onClose={() => {
+            setShowNotifications(false);
+            setAnnouncement("Eclipse alert setup closed.");
+            requestAnimationFrame(() => notificationReturnRef.current?.focus());
           }}
         />
       )}

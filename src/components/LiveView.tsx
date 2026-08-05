@@ -13,6 +13,8 @@ type Props = {
   onChangeLocation: (opener: HTMLButtonElement) => void;
   onPreviewTime: (date: Date) => void;
   onStartAlignment: (opener: HTMLButtonElement) => void;
+  onConfigureAlerts: (opener: HTMLButtonElement) => void;
+  alertsEnabled: boolean;
 };
 
 const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -30,6 +32,8 @@ export function LiveView({
   onChangeLocation,
   onPreviewTime,
   onStartAlignment,
+  onConfigureAlerts,
+  alertsEnabled,
 }: Props) {
   const situation = liveSituation(now, window);
   const currentState = useMemo(
@@ -124,6 +128,14 @@ export function LiveView({
                 : situation.phase === "after"
                   ? "Replay maximum"
                   : "Open now in simulator"}
+            </button>
+            <button
+              className={`secondary-button alert-button ${alertsEnabled ? "active" : ""}`}
+              data-testid="open-notifications"
+              onClick={(event) => onConfigureAlerts(event.currentTarget)}
+            >
+              <span aria-hidden="true">◒</span>
+              {alertsEnabled ? "Alerts on" : "Set eclipse alerts"}
             </button>
             <button
               className="text-button"

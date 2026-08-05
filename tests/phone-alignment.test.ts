@@ -3,6 +3,7 @@ import { magneticDeclination } from "../src/magnetic-declination";
 import { orientationReadingFromEvent } from "../src/orientation-sensor";
 import {
   alignmentGuidance,
+  alignmentMarkerPosition,
   cameraOrientationFromAngles,
   circularJitter,
   signedAngleDelta,
@@ -62,6 +63,27 @@ describe("phone alignment math", () => {
     ).toMatchObject({ aligned: false, quality: "poor" });
   });
 
+  test("moves and clamps the AR target across the finder", () => {
+    expect(
+      alignmentMarkerPosition({
+        headingDeltaDeg: 0,
+        altitudeDeltaDeg: 0,
+      }),
+    ).toEqual({ leftPercent: 50, topPercent: 50, inFinder: true });
+    expect(
+      alignmentMarkerPosition({
+        headingDeltaDeg: 17.5,
+        altitudeDeltaDeg: 12.5,
+      }),
+    ).toEqual({ leftPercent: 70, topPercent: 30, inFinder: true });
+    expect(
+      alignmentMarkerPosition({
+        headingDeltaDeg: -180,
+        altitudeDeltaDeg: 90,
+      }),
+    ).toEqual({ leftPercent: 10, topPercent: 10, inFinder: false });
+  });
+
   test("normalizes Android absolute and iOS magnetic compass readings", () => {
     const android = orientationReadingFromEvent(
       { alpha: 90, beta: 90, gamma: 0, absolute: true },
@@ -76,7 +98,7 @@ describe("phone alignment math", () => {
 
     const ios = orientationReadingFromEvent(
       {
-        alpha: 0,
+        alpha: null,
         beta: 90,
         gamma: 0,
         absolute: false,

@@ -138,6 +138,49 @@ test("shows the live clock, trajectory contacts, and AR alignment handoff", asyn
   );
 });
 
+test("enables local contact alerts and follows location changes", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    class MockNotification {
+      static permission: NotificationPermission = "default";
+      static requestPermission = async () => {
+        MockNotification.permission = "granted";
+        return "granted" as NotificationPermission;
+      };
+    }
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: MockNotification,
+    });
+  });
+
+  await page.getByTestId("open-notifications").click();
+  const dialog = page.getByTestId("notification-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Amsterdam, Netherlands");
+  await dialog.getByLabel("Reminder time").selectOption("30");
+  await dialog.getByRole("checkbox", { name: /partial eclipse ends/i }).check();
+  await page.getByTestId("enable-notifications").click();
+  await expect(dialog.getByRole("status")).toContainText(/alerts saved/i);
+  await dialog.getByRole("button", { name: /close eclipse alerts/i }).click();
+  await expect(page.getByTestId("open-notifications")).toContainText(
+    "Alerts on",
+  );
+
+  await page.getByTestId("location-picker").click();
+  await page.getByTestId("city-search").fill("Copenhagen");
+  await page.getByTestId("place-Copenhagen, Denmark").click();
+  await page.getByTestId("open-notifications").click();
+  await expect(page.getByTestId("notification-dialog")).toContainText(
+    "Copenhagen, Denmark",
+  );
+  await expect(page.getByLabel("Reminder time")).toHaveValue("30");
+  await expect(
+    page.getByRole("checkbox", { name: /partial eclipse ends/i }),
+  ).toBeChecked();
+});
+
 test("starts camera alignment with an absolute compass and restores focus", async ({
   page,
 }) => {
@@ -154,6 +197,32 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
       value: { getUserMedia: async () => new MediaStream() },
     });
     HTMLMediaElement.prototype.play = async () => undefined;
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+      configurable: true,
+      get: () => 1280,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+      configurable: true,
+      get: () => 720,
+    });
+    HTMLCanvasElement.prototype.getContext = () =>
+      ({
+        drawImage: () => undefined,
+        save: () => undefined,
+        restore: () => undefined,
+        beginPath: () => undefined,
+        arc: () => undefined,
+        stroke: () => undefined,
+        moveTo: () => undefined,
+        lineTo: () => undefined,
+        fill: () => undefined,
+        fillRect: () => undefined,
+        fillText: () => undefined,
+        createRadialGradient: () => ({ addColorStop: () => undefined }),
+      }) as unknown as CanvasRenderingContext2D;
+    HTMLCanvasElement.prototype.toBlob = function (callback) {
+      callback(new Blob(["photo"], { type: "image/jpeg" }));
+    };
   });
 
   const opener = page.getByTestId("start-phone-alignment");
@@ -181,7 +250,69 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
     "data-quality",
     "good",
   );
-  await expect(page.getByTestId("alignment-camera")).toBeVisible();
+  const camera = page.getByTestId("alignment-camera");
+  await expect(camera).toBeVisible();
+  await expect(camera).toHaveAttribute("autoplay", "");
+  await expect(camera).toHaveAttribute("playsinline", "");
+  await expect(camera).toHaveClass(/camera-ready/);
+
+  const marker = page.getByTestId("alignment-target-marker");
+  const initialMarkerPosition = await marker.getAttribute("style");
+  await page.evaluate(() => {
+    for (let reading = 0; reading < 8; reading += 1) {
+      const event = new Event("deviceorientationabsolute");
+      for (const [key, value] of Object.entries({
+        alpha: 90,
+        beta: 90,
+        gamma: 0,
+        absolute: true,
+      })) {
+        Object.defineProperty(event, key, { value });
+      }
+      window.dispatchEvent(event);
+    }
+  });
+  await expect
+    .poll(() => marker.getAttribute("style"))
+    .not.toBe(initialMarkerPosition);
+
+  await camera.dispatchEvent("stalled");
+  await expect(camera).not.toHaveClass(/camera-ready/);
+  await expect(
+    page.getByRole("button", { name: "Resume camera" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Resume camera" }).click();
+  await expect(camera).toHaveClass(/camera-ready/);
+
+  await page.getByTestId("open-manual-horizon").click();
+  await expect(page.getByTestId("manual-horizon-control")).toBeVisible();
+  await expect(page.getByTestId("return-to-compass")).toBeVisible();
+  await page.getByTestId("return-to-compass").click();
+
+  await page.getByTestId("take-alignment-photo").click();
+  await expect(page.getByTestId("alignment-photo-review")).toContainText(
+    /AR overlay included/i,
+  );
+  await expect(page.getByTestId("save-alignment-photo")).toHaveAttribute(
+    "download",
+    /-ar\.jpg$/,
+  );
+  await page.getByRole("button", { name: "Retake" }).click();
+  await page.getByText("Include AR overlay", { exact: true }).click();
+  await expect(page.getByTestId("photo-overlay-toggle")).not.toBeChecked();
+  await expect(page.getByTestId("take-alignment-photo")).toHaveAttribute(
+    "aria-label",
+    "Take photo without AR overlay",
+  );
+  await page.getByTestId("take-alignment-photo").click();
+  await expect(page.getByTestId("alignment-photo-review")).toContainText(
+    /Camera only/i,
+  );
+  await expect(page.getByTestId("save-alignment-photo")).toHaveAttribute(
+    "download",
+    /-camera\.jpg$/,
+  );
+  await page.getByRole("button", { name: "Retake" }).click();
   await page.getByTestId("close-phone-alignment").click();
   await expect(opener).toBeFocused();
 });
@@ -209,10 +340,14 @@ test("falls back to a manual sky finder when camera and motion are denied", asyn
   await expect(page.getByText(/motion access was denied/i)).toBeVisible();
   await expect(page.getByText(/camera unavailable/i)).toBeVisible();
   await expect(
-    page.getByTestId("phone-alignment-dialog").getByText("Manual guide", {
-      exact: true,
-    }),
-  ).toBeVisible();
+    page.getByTestId("phone-alignment-dialog").locator(".alignment-quality"),
+  ).toHaveText("Manual 360° horizon");
+  await expect(page.getByTestId("manual-horizon-control")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Move manual horizon right 15 degrees" })
+    .click();
+  await expect(page.getByTestId("manual-horizon-heading")).toHaveValue("15");
+  await page.getByRole("button", { name: "Jump to target bearing" }).click();
   await expect(page.locator(".alignment-eclipse")).toHaveClass(/visible/);
   const accessibility = await new AxeBuilder({ page })
     .include("[data-testid='phone-alignment-dialog']")

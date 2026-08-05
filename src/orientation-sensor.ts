@@ -18,9 +18,9 @@ type WebKitOrientationEvent = DeviceOrientationEvent & {
 };
 
 export type OrientationEventValues = {
-  alpha: number;
-  beta: number;
-  gamma: number;
+  alpha: number | null;
+  beta: number | null;
+  gamma: number | null;
   absolute: boolean;
   webkitCompassHeading?: number;
   webkitCompassAccuracy?: number;
@@ -47,14 +47,20 @@ export function orientationReadingFromEvent(
   timestamp: number,
 ): OrientationReading | null {
   const webkitHeading = values.webkitCompassHeading;
+  if (
+    !Number.isFinite(values.beta) ||
+    !Number.isFinite(values.gamma) ||
+    (values.absolute && !Number.isFinite(values.alpha))
+  )
+    return null;
   if (!values.absolute && !Number.isFinite(webkitHeading)) return null;
   const alpha = values.absolute
-    ? values.alpha
+    ? values.alpha!
     : normalizeDegrees(360 - (webkitHeading! + magneticDeclinationDeg));
   const projected = cameraOrientationFromAngles(
     alpha,
-    values.beta,
-    values.gamma,
+    values.beta!,
+    values.gamma!,
     screenAngleDeg,
   );
   return {
@@ -114,12 +120,6 @@ export async function startOrientationSensor(
 
   const read = (event: Event) => {
     const orientation = event as WebKitOrientationEvent;
-    if (
-      orientation.alpha === null ||
-      orientation.beta === null ||
-      orientation.gamma === null
-    )
-      return;
     const isAbsoluteEvent =
       event.type === "deviceorientationabsolute" || orientation.absolute;
     if (isAbsoluteEvent) receivedAbsolute = true;

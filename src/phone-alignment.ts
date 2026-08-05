@@ -19,6 +19,12 @@ export type AlignmentGuidance = {
   instruction: string;
 };
 
+export type AlignmentMarkerPosition = {
+  leftPercent: number;
+  topPercent: number;
+  inFinder: boolean;
+};
+
 export const normalizeDegrees = (degrees: number) =>
   ((degrees % 360) + 360) % 360;
 
@@ -120,5 +126,29 @@ export function alignmentGuidance(
       Math.abs(headingDeltaDeg) <= 3 &&
       Math.abs(altitudeDeltaDeg) <= 3,
     instruction: direction,
+  };
+}
+
+export function alignmentMarkerPosition(
+  guidance: Pick<AlignmentGuidance, "headingDeltaDeg" | "altitudeDeltaDeg">,
+  horizontalFinderDeg = 70,
+  verticalFinderDeg = 50,
+): AlignmentMarkerPosition {
+  const halfHorizontal = horizontalFinderDeg / 2;
+  const halfVertical = verticalFinderDeg / 2;
+  const horizontalRatio = Math.max(
+    -1,
+    Math.min(1, guidance.headingDeltaDeg / halfHorizontal),
+  );
+  const verticalRatio = Math.max(
+    -1,
+    Math.min(1, guidance.altitudeDeltaDeg / halfVertical),
+  );
+  return {
+    leftPercent: 50 + horizontalRatio * 40,
+    topPercent: 50 - verticalRatio * 40,
+    inFinder:
+      Math.abs(guidance.headingDeltaDeg) <= halfHorizontal &&
+      Math.abs(guidance.altitudeDeltaDeg) <= halfVertical,
   };
 }
