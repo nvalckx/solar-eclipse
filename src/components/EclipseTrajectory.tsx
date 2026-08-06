@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { calculateSkyState } from "../eclipse-logic";
 import { eclipseEvents, type EclipseEvent } from "../live-view";
 import { normalizeDegrees, type SkyViewState } from "../sky-guide";
@@ -88,36 +88,27 @@ export function eclipseSnapshotMoments(
   ];
 }
 
-function SkySnapshot({
-  snapshot,
+function TrajectoryOverview({
+  snapshots,
   baseScene,
   formatTime,
   onSelectTime,
 }: {
-  snapshot: Snapshot;
+  snapshots: Snapshot[];
   baseScene: SkyGuideScene;
   formatTime: (date: Date) => string;
   onSelectTime: (date: Date) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scene = useMemo<SkyGuideScene>(
-    () => ({
-      ...baseScene,
-      state: snapshot.state,
-      target: snapshot.state.sun,
-      targetLabel: snapshot.label,
-      targetObservable: snapshot.state.sun.altitudeDeg > -0.833,
-    }),
-    [baseScene, snapshot],
-  );
+  const [size, setSize] = useState({ width: 760, height: 330 });
   const view = useMemo<SkyViewState>(
     () => ({
-      azimuthDeg: snapshot.state.sun.azimuthDeg,
-      altitudeDeg: snapshot.state.sun.altitudeDeg,
+      azimuthDeg: baseScene.target.azimuthDeg,
+      altitudeDeg: baseScene.target.altitudeDeg,
       rollDeg: 0,
-      fovDeg: 100,
+      fovDeg: 76,
     }),
-    [snapshot.state.sun.altitudeDeg, snapshot.state.sun.azimuthDeg],
+    [baseScene.target.altitudeDeg, baseScene.target.azimuthDeg],
   );
 
   useEffect(() => {
@@ -136,8 +127,16 @@ function SkySnapshot({
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;
       }
+      setSize((current) =>
+        current.width === rect.width && current.height === rect.height
+          ? current
+          : { width: rect.width, height: rect.height },
+      );
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawSkyGuideScene(context, rect.width, rect.height, scene, view);
+      drawSkyGuideScene(context, rect.width, rect.height, baseScene, view, {
+        showBodies: false,
+        showScaleNote: false,
+      });
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
@@ -150,30 +149,89 @@ function SkySnapshot({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [scene, view]);
+  }, [baseScene, view]);
 
-  const sun = snapshot.state.sun;
-  const time = formatTime(snapshot.time);
+  const altitudes = snapshots.map((snapshot) => snapshot.state.sun.altitudeDeg);
+  const altitudeMin = Math.min(...altitudes);
+  const altitudeMax = Math.max(...altitudes);
+  const altitudeSpan = Math.max(1, altitudeMax - altitudeMin);
+  const markerSize = Math.max(
+    38,
+    Math.min(72, (size.width / (snapshots.length + 1)) * 0.72),
+  );
+  const horizontalPadding = Math.max(markerSize * 0.62, size.width * 0.065);
+  const positions = snapshots.map((snapshot, index) => ({
+    x:
+      horizontalPadding +
+      (index / Math.max(1, snapshots.length - 1)) *
+        (size.width - horizontalPadding * 2),
+    y:
+      52 +
+      ((altitudeMax - snapshot.state.sun.altitudeDeg) / altitudeSpan) *
+        Math.max(80, size.height - 126),
+  }));
+
   return (
-    <button
-      className="trajectory-snapshot"
-      data-testid={`trajectory-snapshot-${snapshot.key.toLowerCase()}`}
-      onClick={() => onSelectTime(snapshot.time)}
-      aria-label={`${snapshot.label}, ${time}, azimuth ${Math.round(sun.azimuthDeg)} degrees ${directionFor(sun.azimuthDeg)}, altitude ${Math.round(sun.altitudeDeg)} degrees`}
-    >
-      <span className="trajectory-snapshot-visual">
-        <canvas ref={canvasRef} aria-hidden="true" />
-        <EclipseDiskOverlay state={snapshot.state} visible />
-      </span>
-      <span className="trajectory-snapshot-copy">
-        <strong>{snapshot.label}</strong>
-        <time dateTime={snapshot.time.toISOString()}>{time}</time>
-        <small>
-          {Math.round(sun.azimuthDeg)}° {directionFor(sun.azimuthDeg)} ·{" "}
-          {Math.round(sun.altitudeDeg)}° altitude
-        </small>
-      </span>
-    </button>
+    <div className="trajectory-overview" data-testid="trajectory-overview">
+      <div className="trajectory-overview-visual">
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Composite all-sphere sky-guide overview showing seven stages of eclipse progress from first to fourth contact"
+        />
+        <div className="trajectory-overview-markers">
+          {snapshots.map((snapshot, index) => {
+            const sun = snapshot.state.sun;
+            const time = formatTime(snapshot.time);
+            return (
+              <button
+                key={snapshot.key}
+                className="trajectory-overview-marker"
+                data-testid={`trajectory-snapshot-${snapshot.key.toLowerCase()}`}
+                style={{
+                  left: positions[index].x,
+                  top: positions[index].y,
+                  width: markerSize,
+                  height: markerSize,
+                }}
+                onClick={() => onSelectTime(snapshot.time)}
+                aria-label={`${snapshot.label}, ${time}, azimuth ${Math.round(sun.azimuthDeg)} degrees ${directionFor(sun.azimuthDeg)}, altitude ${Math.round(sun.altitudeDeg)} degrees`}
+              >
+                <span aria-hidden="true">
+                  <EclipseDiskOverlay state={snapshot.state} visible />
+                </span>
+                <i aria-hidden="true">{index + 1}</i>
+              </button>
+            );
+          })}
+        </div>
+        <p className="trajectory-overview-note">
+          Composite progression · phases spaced for clarity
+        </p>
+      </div>
+      <ol
+        className="trajectory-overview-details"
+        tabIndex={0}
+        aria-label="Eclipse phase times and sky directions"
+      >
+        {snapshots.map((snapshot, index) => {
+          const sun = snapshot.state.sun;
+          return (
+            <li key={snapshot.key}>
+              <span>{index + 1}</span>
+              <strong>{snapshot.label}</strong>
+              <time dateTime={snapshot.time.toISOString()}>
+                {formatTime(snapshot.time)}
+              </time>
+              <small>
+                {Math.round(sun.azimuthDeg)}° {directionFor(sun.azimuthDeg)} ·{" "}
+                {Math.round(sun.altitudeDeg)}° altitude
+              </small>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -217,23 +275,14 @@ export function EclipseTrajectory({
     <div className="trajectory-wrap">
       <div className="trajectory-snapshot-heading">
         <span>Progress from C1 to C4</span>
-        <small>Choose a snapshot to preview that moment</small>
+        <small>Choose a phase to preview that moment</small>
       </div>
-      <div
-        className="trajectory-snapshot-strip"
-        data-testid="trajectory-snapshot-strip"
-        aria-label="Eclipse progression snapshots from first to fourth contact"
-      >
-        {snapshots.map((snapshot) => (
-          <SkySnapshot
-            key={snapshot.key}
-            snapshot={snapshot}
-            baseScene={baseScene}
-            formatTime={formatTime}
-            onSelectTime={onSelectTime}
-          />
-        ))}
-      </div>
+      <TrajectoryOverview
+        snapshots={snapshots}
+        baseScene={baseScene}
+        formatTime={formatTime}
+        onSelectTime={onSelectTime}
+      />
       <div
         className="trajectory-preview-legend sky-trajectory-legend"
         aria-label="Sky preview legend"

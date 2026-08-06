@@ -39,11 +39,13 @@ export function EclipseDiskOverlay({
           <stop offset="1" stopColor="#ff9b62" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <circle
-        className="alignment-corona"
-        r="68"
-        fill={`url(#${coronaGradientId})`}
-      />
+      {state.eclipse.type === "total" && (
+        <circle
+          className="alignment-corona"
+          r="68"
+          fill={`url(#${coronaGradientId})`}
+        />
+      )}
       <circle r="30" fill={`url(#${sunGradientId})`} />
       <circle cx={moonX} cy={moonY} r={moonRadius} fill="#02050b" />
     </svg>

@@ -12,6 +12,8 @@ import type { SkyGuideScene, SkyGuideTrajectoryPoint } from "./sky-guide-scene";
 
 type RenderOptions = {
   transparent?: boolean;
+  showBodies?: boolean;
+  showScaleNote?: boolean;
 };
 
 type ScreenPoint = {
@@ -510,15 +512,19 @@ export function drawSkyGuideScene(
   drawGrid(context, project);
   drawStars(context, scene, project);
   drawTrajectories(context, width, height, scene, project);
-  drawSunAndMoon(context, height, scene, view, project);
+  if (options.showBodies !== false) {
+    drawSunAndMoon(context, height, scene, view, project);
+  }
   drawOffscreenTarget(context, width, height, scene, view, project);
 
-  context.fillStyle = "rgba(238, 245, 252, .58)";
-  context.font = "600 9px ui-monospace, monospace";
-  context.textAlign = "left";
-  context.fillText(
-    `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · TRUE-SCALE DISKS · HALOS ARE LOCATORS`,
-    12,
-    height - 12,
-  );
+  if (options.showScaleNote !== false) {
+    context.fillStyle = "rgba(238, 245, 252, .58)";
+    context.font = "600 9px ui-monospace, monospace";
+    context.textAlign = "left";
+    context.fillText(
+      `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · TRUE-SCALE DISKS · HALOS ARE LOCATORS`,
+      12,
+      height - 12,
+    );
+  }
 }

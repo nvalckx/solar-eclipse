@@ -1793,75 +1793,133 @@ h1 em {
   letter-spacing: 0;
   text-transform: none;
 }
-.trajectory-snapshot-strip {
-  padding: 12px;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(190px, 42%);
-  gap: 10px;
-  overflow-x: auto;
+.trajectory-overview {
   background: #07101c;
-  scroll-snap-type: x proximity;
-  scrollbar-color: rgba(255, 173, 118, 0.45) rgba(255, 255, 255, 0.05);
 }
-.trajectory-snapshot {
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 11px;
-  background: #081523;
-  color: #e7eef6;
-  text-align: left;
-  scroll-snap-align: start;
-  transition:
-    border-color 160ms ease,
-    transform 160ms ease;
-}
-.trajectory-snapshot:hover {
-  border-color: rgba(255, 173, 118, 0.62);
-  transform: translateY(-2px);
-}
-.trajectory-snapshot:focus-visible {
-  outline: 2px solid var(--orange-bright);
-  outline-offset: 2px;
-}
-.trajectory-snapshot-visual {
+.trajectory-overview-visual {
   position: relative;
-  height: 158px;
-  display: block;
+  height: clamp(300px, 42vw, 410px);
   overflow: hidden;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
 }
-.trajectory-snapshot-visual canvas {
+.trajectory-overview-visual > canvas,
+.trajectory-overview-markers {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+.trajectory-overview-visual > canvas {
   display: block;
 }
-.trajectory-snapshot .trajectory-snapshot-visual .alignment-eclipse {
-  width: 98px;
-  max-width: none;
+.trajectory-overview-markers {
+  z-index: 3;
   pointer-events: none;
 }
-.trajectory-snapshot-copy {
-  padding: 10px 11px 11px;
+.trajectory-overview-marker {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
+}
+.trajectory-overview-marker:hover {
+  filter: brightness(1.12);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.trajectory-overview-marker:focus-visible {
+  outline: 2px solid var(--orange-bright);
+  outline-offset: 5px;
+}
+.trajectory-overview-marker .alignment-eclipse {
+  width: 100%;
+  max-width: none;
+  filter: drop-shadow(0 0 7px rgba(255, 210, 158, 0.4));
+  pointer-events: none;
+}
+.trajectory-overview-marker > i {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 201, 155, 0.65);
+  border-radius: 50%;
+  background: rgba(4, 13, 23, 0.9);
+  color: #ffd0a8;
+  font: 700 8px var(--mono);
+  font-style: normal;
+}
+.trajectory-overview-note {
+  position: absolute;
+  z-index: 4;
+  right: 10px;
+  bottom: 9px;
+  margin: 0;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: rgba(3, 11, 20, 0.72);
+  color: rgba(226, 237, 247, 0.72);
+  font: 8px var(--mono);
+  pointer-events: none;
+}
+.trajectory-overview-details {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(118px, 1fr);
+  overflow-x: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  list-style: none;
+  scrollbar-color: rgba(255, 173, 118, 0.45) rgba(255, 255, 255, 0.05);
+}
+.trajectory-overview-details li {
+  position: relative;
+  min-width: 0;
+  padding: 11px 10px 12px 30px;
   display: grid;
   gap: 3px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 21, 35, 0.94);
 }
-.trajectory-snapshot-copy strong {
+.trajectory-overview-details li > span {
+  position: absolute;
+  top: 11px;
+  left: 9px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 173, 118, 0.42);
+  border-radius: 50%;
+  color: #ffc194;
+  font: 700 7px var(--mono);
+}
+.trajectory-overview-details strong {
   overflow: hidden;
   color: #fff0dc;
-  font-size: 11px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.trajectory-snapshot-copy time,
-.trajectory-snapshot-copy small {
+.trajectory-overview-details time,
+.trajectory-overview-details small {
   color: var(--muted);
   font: 9px/1.35 var(--mono);
 }
-.trajectory-snapshot-copy small {
+.trajectory-overview-details small {
   color: #b9c8d7;
+  white-space: nowrap;
 }
 .trajectory-preview-legend.sky-trajectory-legend {
   margin: 0;

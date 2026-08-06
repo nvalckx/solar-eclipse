@@ -134,9 +134,15 @@ test("shows the live clock, trajectory contacts, and integrated sky guide", asyn
     "data-sky-target-altitude",
     /-?\d+/,
   );
-  const snapshotStrip = page.getByTestId("trajectory-snapshot-strip");
-  await expect(snapshotStrip).toBeVisible();
-  await expect(snapshotStrip.locator(".trajectory-snapshot")).toHaveCount(7);
+  const trajectoryOverview = page.getByTestId("trajectory-overview");
+  await expect(trajectoryOverview).toBeVisible();
+  await expect(
+    trajectoryOverview.locator(".trajectory-overview-marker"),
+  ).toHaveCount(7);
+  await expect(trajectoryOverview.getByRole("img")).toHaveAttribute(
+    "aria-label",
+    /composite all-sphere sky-guide overview/i,
+  );
   await expect(page.getByTestId("trajectory-snapshot-build_1")).toHaveAttribute(
     "aria-label",
     /eclipse building.+azimuth \d+ degrees .+, altitude -?\d+ degrees/i,
