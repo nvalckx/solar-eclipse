@@ -1,7 +1,10 @@
-import { useMemo } from "react";
-import type { EclipseWindow, ObserverLocation } from "../types";
+import { useEffect, useMemo, useRef } from "react";
 import { calculateSkyState } from "../eclipse-logic";
 import { eclipseEvents } from "../live-view";
+import { normalizeDegrees, type SkyViewState } from "../sky-guide";
+import { drawSkyGuideScene } from "../sky-guide-renderer";
+import { createSkyGuideScene } from "../sky-guide-scene";
+import type { EclipseWindow, ObserverLocation } from "../types";
 
 type Props = {
   location: ObserverLocation;
@@ -11,12 +14,10 @@ type Props = {
   onSelectTime: (date: Date) => void;
 };
 
-const WIDTH = 760;
-const HEIGHT = 250;
-const PLOT_LEFT = 38;
-const PLOT_RIGHT = 18;
-const PLOT_TOP = 24;
-const PLOT_BOTTOM = 42;
+const directionFor = (azimuth: number) =>
+  ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
+    Math.round(normalizeDegrees(azimuth) / 45) % 8
+  ];
 
 export function EclipseTrajectory({
   location,
@@ -25,137 +26,110 @@ export function EclipseTrajectory({
   formatTime,
   onSelectTime,
 }: Props) {
-  const { points, altitudeMin, altitudeMax } = useMemo(() => {
-    const samples = Array.from({ length: 49 }, (_, index) => {
-      const fraction = index / 48;
-      const time = new Date(
-        window.start.getTime() +
-          fraction * (window.end.getTime() - window.start.getTime()),
-      );
-      return { time, state: calculateSkyState(time, location, window) };
-    });
-    const altitudes = samples.flatMap((sample) => [
-      sample.state.sun.altitudeDeg,
-      sample.state.moon.altitudeDeg,
-    ]);
-    return {
-      points: samples,
-      altitudeMin: Math.floor(Math.min(...altitudes) / 5) * 5 - 2,
-      altitudeMax: Math.ceil(Math.max(...altitudes) / 5) * 5 + 2,
-    };
-  }, [location, window]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const events = useMemo(
+    () =>
+      eclipseEvents(window).map((event) => ({
+        ...event,
+        state: calculateSkyState(event.time, location, window),
+      })),
+    [location, window],
+  );
+  const liveAvailable = now >= window.start && now <= window.end;
+  const targetTime = liveAvailable ? now : window.peak;
+  const targetLabel = liveAvailable ? "Live now" : "Maximum eclipse";
+  const scene = useMemo(
+    () =>
+      createSkyGuideScene(targetTime, targetLabel, location, window, events),
+    [events, location, targetLabel, targetTime, window],
+  );
+  const view = useMemo<SkyViewState>(
+    () => ({
+      azimuthDeg: scene.target.azimuthDeg,
+      altitudeDeg: scene.target.altitudeDeg,
+      rollDeg: 0,
+      fovDeg: 100,
+    }),
+    [scene.target.altitudeDeg, scene.target.azimuthDeg],
+  );
 
-  const xFor = (date: Date) =>
-    PLOT_LEFT +
-    ((date.getTime() - window.start.getTime()) /
-      (window.end.getTime() - window.start.getTime())) *
-      (WIDTH - PLOT_LEFT - PLOT_RIGHT);
-  const yFor = (altitude: number) =>
-    PLOT_TOP +
-    ((altitudeMax - altitude) / (altitudeMax - altitudeMin)) *
-      (HEIGHT - PLOT_TOP - PLOT_BOTTOM);
-  const pathFor = (body: "sun" | "moon") =>
-    points
-      .map((point, index) => {
-        const position = point.state[body];
-        return `${index ? "L" : "M"}${xFor(point.time).toFixed(1)},${yFor(position.altitudeDeg).toFixed(1)}`;
-      })
-      .join(" ");
-  const events = eclipseEvents(window);
-  const currentX = xFor(now);
-  const showCurrent =
-    now.getTime() >= window.start.getTime() &&
-    now.getTime() <= window.end.getTime();
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    let frame = 0;
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+      const pixelWidth = Math.round(rect.width * dpr);
+      const pixelHeight = Math.round(rect.height * dpr);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawSkyGuideScene(context, rect.width, rect.height, scene, view);
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    };
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(canvas);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [scene, view]);
 
   return (
     <div className="trajectory-wrap">
-      <svg
-        className="trajectory-chart"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      <canvas
+        ref={canvasRef}
+        className="trajectory-sky-preview"
+        data-testid="trajectory-sky-preview"
         role="img"
-        aria-label="Sun and Moon altitude trajectories from first to fourth contact"
+        aria-label={`All-sphere sky-guide preview centered on ${targetLabel.toLowerCase()}. Full dashed Sun and Moon paths, true horizon, and eclipse contact markers are shown.`}
+      />
+      <div
+        className="trajectory-preview-legend sky-trajectory-legend"
+        aria-label="Sky preview legend"
       >
-        <defs>
-          <linearGradient id="sun-path-glow" x1="0" x2="1">
-            <stop offset="0" stopColor="#ff9366" />
-            <stop offset="0.55" stopColor="#fff0b8" />
-            <stop offset="1" stopColor="#ff9366" />
-          </linearGradient>
-        </defs>
-        {[altitudeMin, (altitudeMin + altitudeMax) / 2, altitudeMax].map(
-          (altitude) => (
-            <g key={altitude}>
-              <line
-                className="trajectory-gridline"
-                x1={PLOT_LEFT}
-                x2={WIDTH - PLOT_RIGHT}
-                y1={yFor(altitude)}
-                y2={yFor(altitude)}
-              />
-              <text
-                className="trajectory-axis-label"
-                x={PLOT_LEFT - 7}
-                y={yFor(altitude) + 4}
-                textAnchor="end"
-              >
-                {Math.round(altitude)}°
-              </text>
-            </g>
-          ),
-        )}
-        <path className="trajectory-moon" d={pathFor("moon")} />
-        <path className="trajectory-sun" d={pathFor("sun")} />
-        {events.map((event) => {
-          const eventState = calculateSkyState(event.time, location, window);
-          const x = xFor(event.time);
-          const y = yFor(eventState.sun.altitudeDeg);
-          return (
-            <g className="trajectory-event" key={event.key}>
-              <line x1={x} x2={x} y1={y + 7} y2={HEIGHT - PLOT_BOTTOM} />
-              <circle cx={x} cy={y} r="5" />
-              <text x={x} y={HEIGHT - 17} textAnchor="middle">
-                {event.key}
-              </text>
-            </g>
-          );
-        })}
-        {showCurrent && (
-          <g className="trajectory-now">
-            <line
-              x1={currentX}
-              x2={currentX}
-              y1={PLOT_TOP - 7}
-              y2={HEIGHT - PLOT_BOTTOM}
-            />
-            <text x={currentX} y={13} textAnchor="middle">
-              NOW
-            </text>
-          </g>
-        )}
-      </svg>
-      <div className="trajectory-legend" aria-hidden="true">
-        <span>
-          <i className="legend-sun-line" /> Sun altitude
-        </span>
-        <span>
-          <i className="legend-moon-line" /> Moon altitude
-        </span>
+        <span className="sun-path-key">Sun · 360° path</span>
+        <span className="moon-path-key">Moon · 360° path</span>
+        <span className="true-scale-key">True-scale disks · locator halos</span>
       </div>
-      <div className="live-event-list" aria-label="Eclipse event times">
+      <div
+        className="live-event-list"
+        aria-label="Eclipse event times and directions"
+      >
         {events.map((event) => {
           const difference = event.time.getTime() - now.getTime();
           const state = difference > 0 ? "upcoming" : "past";
+          const sun = event.state.sun;
           return (
             <button
               className={state}
               data-testid={`live-event-${event.key.toLowerCase()}`}
               key={event.key}
               onClick={() => onSelectTime(event.time)}
+              aria-label={`${event.key}, ${event.label}, ${formatTime(event.time)}, azimuth ${Math.round(sun.azimuthDeg)} degrees ${directionFor(sun.azimuthDeg)}, altitude ${Math.round(sun.altitudeDeg)} degrees`}
             >
               <span className="event-code">{event.key}</span>
               <span>
                 <strong>{event.label}</strong>
-                <small>{formatTime(event.time)}</small>
+                <small className="event-sky-coordinates">
+                  <time dateTime={event.time.toISOString()}>
+                    {formatTime(event.time)}
+                  </time>
+                  <span>
+                    {Math.round(sun.azimuthDeg)}° {directionFor(sun.azimuthDeg)}
+                    · {Math.round(sun.altitudeDeg)}° altitude
+                  </span>
+                </small>
               </span>
               <span className="event-relative">
                 {difference > 0 ? formatCountdownShort(difference) : "Passed"}

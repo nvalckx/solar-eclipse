@@ -29,7 +29,6 @@ export type ProjectedDirection = {
 
 export const MIN_SKY_FOV = 25;
 export const MAX_SKY_FOV = 100;
-export const CELESTIAL_DISK_ENLARGEMENT = 8;
 
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 const degrees = (value: number) => (value * 180) / Math.PI;

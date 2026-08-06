@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  CELESTIAL_DISK_ENLARGEMENT,
   angularSeparation,
   canonicalizeDirection,
   directionVector,
@@ -74,7 +73,7 @@ describe("all-sphere sky projection", () => {
     ).toBeCloseTo(90, 8);
   });
 
-  test("zooms celestial disks and their separation with the same projection scale", () => {
+  test("zooms true-scale disks and their separation with the same projection scale", () => {
     const width = 800;
     const height = 400;
     const sun = { azimuthDeg: 0, altitudeDeg: 0 };
@@ -84,13 +83,13 @@ describe("all-sphere sky projection", () => {
       const projectedSun = projectDirection(sun, view, width, height);
       const projectedMoon = projectDirection(moon, view, width, height);
       const sunRadius = projectedAngularRadius(
-        0.266 * CELESTIAL_DISK_ENLARGEMENT,
+        0.266,
         view,
         height,
         projectedSun.depth,
       );
       const moonRadius = projectedAngularRadius(
-        0.26 * CELESTIAL_DISK_ENLARGEMENT,
+        0.26,
         view,
         height,
         projectedMoon.depth,

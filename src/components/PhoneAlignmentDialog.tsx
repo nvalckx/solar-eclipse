@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { captureAlignmentPhoto } from "../alignment-photo";
 import { calculateSkyState, eclipseWindowFor } from "../eclipse-logic";
-import { eclipseEvents, type EclipseEventKey } from "../live-view";
+import {
+  eclipseEvents,
+  formatCountdown,
+  liveSituation,
+  type EclipseEventKey,
+} from "../live-view";
 import {
   alignmentGuidance,
   circularJitter,
@@ -22,6 +27,7 @@ import {
 } from "../sky-guide";
 import { createSkyGuideScene } from "../sky-guide-scene";
 import type { ObserverLocation } from "../types";
+import { EclipseDiskOverlay } from "./EclipseDiskOverlay";
 import { SkySphereCanvas } from "./SkySphereCanvas";
 
 type CapturedPhoto = {
@@ -74,6 +80,7 @@ export function PhoneAlignmentDialog({
   const [locating, setLocating] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EclipseEventKey>("MAX");
   const [followLive, setFollowLive] = useState(true);
+  const [previewTimeMs, setPreviewTimeMs] = useState<number | null>(null);
   const [mode, setMode] = useState<GuideMode>("explore");
   const [reading, setReading] = useState<OrientationReading | null>(null);
   const [sensorCapability, setSensorCapability] =
@@ -97,12 +104,35 @@ export function PhoneAlignmentDialog({
     [sessionLocation],
   );
   const events = useMemo(() => eclipseEvents(window), [window]);
-  const liveAvailable = now >= window.start && now <= window.end;
   const selected =
     events.find((event) => event.key === selectedEvent) ??
     events.find((event) => event.key === "MAX")!;
-  const targetTime = followLive && liveAvailable ? now : selected.time;
-  const targetLabel = followLive && liveAvailable ? "Live now" : selected.label;
+  const targetTimeMs = followLive
+    ? now.getTime()
+    : (previewTimeMs ?? selected.time.getTime());
+  const targetTime = useMemo(() => new Date(targetTimeMs), [targetTimeMs]);
+  const targetLabel = followLive
+    ? "Live now"
+    : previewTimeMs !== null
+      ? `Preview · ${formatTime(targetTime, true)}`
+      : selected.label;
+  const liveStatus = liveSituation(now, window);
+  const nextLiveEvent = liveStatus.nextEvent;
+  const timelineStartMs =
+    now.getTime() <= window.peak.getTime()
+      ? now.getTime()
+      : window.peak.getTime();
+  const timelineEndMs =
+    now.getTime() <= window.peak.getTime()
+      ? window.peak.getTime()
+      : now.getTime();
+  const timelineDurationMs = Math.max(1, timelineEndMs - timelineStartMs);
+  const timelineValue = Math.round(
+    Math.max(
+      0,
+      Math.min(1, (targetTimeMs - timelineStartMs) / timelineDurationMs),
+    ) * 1000,
+  );
   const scene = useMemo(
     () =>
       createSkyGuideScene(
@@ -116,11 +146,7 @@ export function PhoneAlignmentDialog({
   );
   const [view, setView] = useState<SkyViewState>(() => {
     const initialWindow = eclipseWindowFor(location);
-    const initial = calculateSkyState(
-      initialWindow.peak,
-      location,
-      initialWindow,
-    );
+    const initial = calculateSkyState(now, location, initialWindow);
     return {
       azimuthDeg: initial.sun.azimuthDeg,
       altitudeDeg: initial.sun.altitudeDeg,
@@ -259,11 +285,7 @@ export function PhoneAlignmentDialog({
         setLocating(false);
         onLocationChange(next);
         const nextWindow = eclipseWindowFor(next);
-        const nextTarget = calculateSkyState(
-          nextWindow.peak,
-          next,
-          nextWindow,
-        ).sun;
+        const nextTarget = calculateSkyState(targetTime, next, nextWindow).sun;
         setView((current) => ({
           ...current,
           azimuthDeg: nextTarget.azimuthDeg,
@@ -416,14 +438,18 @@ export function PhoneAlignmentDialog({
     }
   };
 
-  const centerTarget = () => {
+  const centerBody = (body: { azimuthDeg: number; altitudeDeg: number }) => {
     enterExplore();
     setView((current) => ({
       ...current,
-      azimuthDeg: scene.target.azimuthDeg,
-      altitudeDeg: scene.target.altitudeDeg,
+      azimuthDeg: body.azimuthDeg,
+      altitudeDeg: body.altitudeDeg,
       rollDeg: 0,
     }));
+  };
+
+  const centerTarget = () => {
+    centerBody(scene.state.sun);
   };
 
   const resetHorizon = () => {
@@ -503,6 +529,7 @@ export function PhoneAlignmentDialog({
   const chooseEvent = (key: EclipseEventKey, time: Date) => {
     setSelectedEvent(key);
     setFollowLive(false);
+    setPreviewTimeMs(null);
     const target = calculateSkyState(time, sessionLocation, window).sun;
     enterExplore();
     setView((current) => ({
@@ -511,6 +538,27 @@ export function PhoneAlignmentDialog({
       altitudeDeg: target.altitudeDeg,
       rollDeg: 0,
     }));
+  };
+
+  const chooseLive = () => {
+    setFollowLive(true);
+    setPreviewTimeMs(null);
+    const liveTarget = calculateSkyState(now, sessionLocation, window).sun;
+    centerBody(liveTarget);
+  };
+
+  const scrubTimeline = (value: number) => {
+    const nextTimeMs = Math.round(
+      timelineStartMs + (timelineDurationMs * value) / 1000,
+    );
+    setFollowLive(false);
+    setPreviewTimeMs(nextTimeMs);
+    const previewTarget = calculateSkyState(
+      new Date(nextTimeMs),
+      sessionLocation,
+      window,
+    ).sun;
+    centerBody(previewTarget);
   };
 
   const modeLabel =
@@ -579,29 +627,13 @@ export function PhoneAlignmentDialog({
             </div>
 
             <nav className="alignment-events" aria-label="Sky target time">
-              {liveAvailable && (
-                <button
-                  data-testid="alignment-event-live"
-                  aria-pressed={followLive}
-                  onClick={() => {
-                    setFollowLive(true);
-                    const liveTarget = calculateSkyState(
-                      now,
-                      sessionLocation,
-                      window,
-                    ).sun;
-                    enterExplore();
-                    setView((current) => ({
-                      ...current,
-                      azimuthDeg: liveTarget.azimuthDeg,
-                      altitudeDeg: liveTarget.altitudeDeg,
-                      rollDeg: 0,
-                    }));
-                  }}
-                >
-                  <small>LIVE</small> Now
-                </button>
-              )}
+              <button
+                data-testid="alignment-event-live"
+                aria-pressed={followLive}
+                onClick={chooseLive}
+              >
+                <small>LIVE</small> Now
+              </button>
               {events.map((event) => {
                 const eventState = calculateSkyState(
                   event.time,
@@ -614,7 +646,8 @@ export function PhoneAlignmentDialog({
                     key={event.key}
                     data-testid={`alignment-event-${event.key.toLowerCase()}`}
                     aria-pressed={
-                      (!followLive || !liveAvailable) &&
+                      !followLive &&
+                      previewTimeMs === null &&
                       selected.key === event.key
                     }
                     data-below-horizon={observable ? "false" : "true"}
@@ -636,10 +669,15 @@ export function PhoneAlignmentDialog({
                 {modeLabel}
               </span>
               <strong>{targetLabel}</strong>
-              <span>
-                Target {Math.round(scene.target.azimuthDeg)}°{" "}
-                {directionFor(scene.target.azimuthDeg)} ·{" "}
-                {Math.round(scene.target.altitudeDeg)}° altitude
+              <span data-testid="sky-guide-sun-position">
+                Sun {Math.round(scene.state.sun.azimuthDeg)}°{" "}
+                {directionFor(scene.state.sun.azimuthDeg)} ·{" "}
+                {Math.round(scene.state.sun.altitudeDeg)}° altitude
+              </span>
+              <span data-testid="sky-guide-moon-position">
+                Moon {Math.round(scene.state.moon.azimuthDeg)}°{" "}
+                {directionFor(scene.state.moon.azimuthDeg)} ·{" "}
+                {Math.round(scene.state.moon.altitudeDeg)}° altitude
               </span>
               <span data-testid="current-alignment-heading">
                 View {Math.round(view.azimuthDeg)}°{" "}
@@ -656,7 +694,10 @@ export function PhoneAlignmentDialog({
               aria-label="Sky view controls"
             >
               <button data-testid="center-sky-target" onClick={centerTarget}>
-                ◎ Target
+                ◎ Sun
+              </button>
+              <button onClick={() => centerBody(scene.state.moon)}>
+                ◉ Moon
               </button>
               <button onClick={resetHorizon}>Horizon</button>
               <button
@@ -745,6 +786,69 @@ export function PhoneAlignmentDialog({
               </button>
               <p role="status">{locationMessage}</p>
             </div>
+            <section
+              className="sky-guide-live-timeline"
+              aria-labelledby="sky-guide-live-title"
+            >
+              <div className="sky-guide-live-heading">
+                <div>
+                  <span className="kicker">LIVE SKY CLOCK</span>
+                  <strong id="sky-guide-live-title">
+                    {nextLiveEvent
+                      ? `${nextLiveEvent.label} in`
+                      : "Eclipse replay available"}
+                  </strong>
+                </div>
+                <output data-testid="sky-guide-countdown" aria-live="off">
+                  {nextLiveEvent
+                    ? formatCountdown(
+                        nextLiveEvent.time.getTime() - now.getTime(),
+                      )
+                    : "Event complete"}
+                </output>
+              </div>
+              <label htmlFor="sky-guide-time-slider">
+                {now.getTime() <= window.peak.getTime()
+                  ? "Fast-forward to maximum eclipse"
+                  : "Replay from maximum eclipse to now"}
+              </label>
+              <input
+                id="sky-guide-time-slider"
+                data-testid="sky-guide-time-slider"
+                type="range"
+                min="0"
+                max="1000"
+                step="1"
+                value={timelineValue}
+                aria-valuetext={formatTime(targetTime, true)}
+                onChange={(event) => scrubTimeline(Number(event.target.value))}
+              />
+              <div className="sky-guide-timeline-labels" aria-hidden="true">
+                <span>
+                  {now.getTime() <= window.peak.getTime() ? "Now" : "Maximum"}
+                </span>
+                <strong>{formatTime(targetTime, true)}</strong>
+                <span>
+                  {now.getTime() <= window.peak.getTime() ? "Maximum" : "Now"}
+                </span>
+              </div>
+            </section>
+            <section
+              className="sky-guide-eclipse-detail"
+              aria-labelledby="sky-guide-eclipse-detail-title"
+            >
+              <div>
+                <span className="kicker">PHYSICAL OVERLAP DETAIL</span>
+                <strong id="sky-guide-eclipse-detail-title">
+                  {Math.round(scene.state.eclipse.obscurationPercent)}% solar
+                  coverage
+                </strong>
+                <small>
+                  Magnified aid: both disks and their separation scale together.
+                </small>
+              </div>
+              <EclipseDiskOverlay state={scene.state} visible />
+            </section>
             <div className="sky-guide-help">
               <strong>Drag anywhere. Look everywhere.</strong>
               <div

@@ -53,4 +53,26 @@ describe("all-sphere daily trajectories", () => {
     ).toEqual(events.map((event) => event.key));
     expect(scene.moonTrajectory.some((point) => point.key)).toBe(false);
   });
+
+  test("centers live daily trajectories on the requested current time", () => {
+    const window = eclipseWindowFor(location);
+    const events = eclipseEvents(window);
+    const currentTime = new Date("2026-08-06T12:00:00Z");
+    const scene = createSkyGuideScene(
+      currentTime,
+      "Live now",
+      location,
+      window,
+      events,
+    );
+
+    expect(scene.state.timestampUtc).toBe(currentTime.toISOString());
+    expect(
+      angularSeparation(scene.sunTrajectory[72], scene.state.sun),
+    ).toBeLessThan(0.01);
+    expect(
+      angularSeparation(scene.moonTrajectory[72], scene.state.moon),
+    ).toBeLessThan(0.01);
+    expect(scene.sunTrajectory.some((point) => point.key)).toBe(false);
+  });
 });

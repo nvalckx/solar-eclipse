@@ -147,6 +147,7 @@ export function SkySphereCanvas({
       data-heading={Math.round(view.azimuthDeg)}
       data-altitude={Math.round(view.altitudeDeg)}
       data-fov={Math.round(view.fovDeg)}
+      data-scene-time={scene.state.timestampUtc}
       data-sun-trajectory-points={scene.sunTrajectory.length}
       data-moon-trajectory-points={scene.moonTrajectory.length}
       tabIndex={0}

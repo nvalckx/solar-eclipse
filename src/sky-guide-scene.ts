@@ -90,12 +90,16 @@ function bodyTrajectory(
   eventByTime?: ReadonlyMap<number, { key: string; label: string; time: Date }>,
 ): SkyGuideTrajectoryPoint[] {
   const start = centerTime.getTime() - revolutionMs / 2;
+  const end = start + revolutionMs;
   const sampleTimes = Array.from(
     { length: TRAJECTORY_SEGMENTS + 1 },
     (_, index) =>
       Math.round(start + (revolutionMs * index) / TRAJECTORY_SEGMENTS),
   );
-  eventByTime?.forEach((event) => sampleTimes.push(event.time.getTime()));
+  eventByTime?.forEach((event) => {
+    const eventTime = event.time.getTime();
+    if (eventTime >= start && eventTime <= end) sampleTimes.push(eventTime);
+  });
 
   return [...new Set(sampleTimes)]
     .sort((left, right) => left - right)
@@ -137,14 +141,14 @@ export function createSkyGuideScene(
   );
   const sunTrajectory = bodyTrajectory(
     Astronomy.Body.Sun,
-    window.peak,
+    targetTime,
     observer,
     SUN_APPARENT_REVOLUTION_MS,
     eventByTime,
   );
   const moonTrajectory = bodyTrajectory(
     Astronomy.Body.Moon,
-    window.peak,
+    targetTime,
     observer,
     MOON_APPARENT_REVOLUTION_MS,
   );

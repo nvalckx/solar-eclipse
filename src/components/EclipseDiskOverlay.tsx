@@ -22,7 +22,7 @@ export function EclipseDiskOverlay({
       className={`alignment-eclipse ${visible ? "visible" : ""}`}
       viewBox="-82 -82 164 164"
       role="img"
-      aria-label={`${Math.round(state.eclipse.obscurationPercent)} percent solar coverage at the selected time; disks are enlarged equally.`}
+      aria-label={`${Math.round(state.eclipse.obscurationPercent)} percent solar coverage at the selected time; disk sizes and center separation are magnified together, preserving the physical overlap.`}
     >
       <defs>
         <radialGradient id="alignment-sun" cx="35%" cy="32%">

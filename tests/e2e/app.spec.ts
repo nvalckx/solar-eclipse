@@ -134,7 +134,16 @@ test("shows the live clock, trajectory contacts, and integrated sky guide", asyn
     "data-sky-target-altitude",
     /-?\d+/,
   );
+  await expect(page.getByTestId("trajectory-sky-preview")).toHaveAttribute(
+    "aria-label",
+    /all-sphere sky-guide preview/i,
+  );
   await expect(trajectoryCard).toContainText(/drag with a mouse or trackpad/i);
+  await expect(page.getByTestId("live-event-c1")).toHaveAttribute(
+    "aria-label",
+    /azimuth \d+ degrees .+, altitude -?\d+ degrees/i,
+  );
+  await expect(page.getByTestId("live-event-c1")).toContainText(/° altitude/i);
   await page.getByTestId("live-event-c1").click();
   const firstContactTime = await page
     .getByTestId("eclipse-timeline")
@@ -258,8 +267,14 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
   expect(
     Number(await canvas.getAttribute("data-moon-trajectory-points")),
   ).toBeGreaterThanOrEqual(145);
+  await expect(page.getByText("PHYSICAL OVERLAP DETAIL")).toBeVisible();
+  await expect(
+    page.getByRole("img", {
+      name: /center separation are magnified together, preserving the physical overlap/i,
+    }),
+  ).toBeVisible();
   await expect(page.getByText("Explore mode", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("alignment-event-max")).toHaveAttribute(
+  await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -373,6 +388,41 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
   await expect(page.getByTestId("alignment-camera")).toHaveCount(0);
   await page.getByTestId("close-phone-alignment").click();
   await expect(opener).toBeFocused();
+});
+
+test("shows the current Sun and Moon and fast-forwards the live sky", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-08-06T12:00:00Z") });
+  await page.goto(
+    "./?lat=41.65&lon=-0.89&elev=250&tz=Europe%2FMadrid&label=Zaragoza%2C%20Spain",
+  );
+  await page.getByTestId("open-sky-guide").click();
+
+  const canvas = page.getByTestId("sky-sphere-canvas");
+  await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("sky-guide-sun-position")).toContainText(
+    /Sun .* altitude/,
+  );
+  await expect(page.getByTestId("sky-guide-moon-position")).toContainText(
+    /Moon .* altitude/,
+  );
+  await expect(page.getByTestId("sky-guide-countdown")).toContainText(/d/);
+  await expect(
+    page.getByLabel("Fast-forward to maximum eclipse"),
+  ).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-scene-time", /^2026-08-06T12:00:/);
+
+  await page.getByTestId("sky-guide-time-slider").fill("1000");
+  await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(canvas).toHaveAttribute("data-scene-time", /^2026-08-12T/);
+  await expect(page.getByText(/^Preview ·/)).toBeVisible();
 });
 
 test("falls back to a manual sky finder when camera and motion are denied", async ({

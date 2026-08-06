@@ -1,5 +1,4 @@
 import {
-  CELESTIAL_DISK_ENLARGEMENT,
   cameraBasis,
   clamp,
   directionVector,
@@ -377,33 +376,34 @@ function drawSunAndMoon(
   const sun = project(scene.state.sun);
   const moon = project(scene.state.moon);
   const sunRadius = projectedAngularRadius(
-    (scene.state.sun.angularDiameterDeg / 2) * CELESTIAL_DISK_ENLARGEMENT,
+    scene.state.sun.angularDiameterDeg / 2,
     view,
     height,
     sun.depth,
   );
   const moonRadius = projectedAngularRadius(
-    (scene.state.moon.angularDiameterDeg / 2) * CELESTIAL_DISK_ENLARGEMENT,
+    scene.state.moon.angularDiameterDeg / 2,
     view,
     height,
     moon.depth,
   );
 
   if (sun.visible) {
+    const glowRadius = Math.max(11, sunRadius * 3.7);
     const glow = context.createRadialGradient(
       sun.x,
       sun.y,
-      sunRadius * 0.4,
+      Math.max(0.6, sunRadius * 0.4),
       sun.x,
       sun.y,
-      sunRadius * 3.7,
+      glowRadius,
     );
     glow.addColorStop(0, "rgba(255, 244, 202, .88)");
     glow.addColorStop(0.25, "rgba(255, 181, 103, .28)");
     glow.addColorStop(1, "rgba(255, 151, 91, 0)");
     context.fillStyle = glow;
     context.beginPath();
-    context.arc(sun.x, sun.y, sunRadius * 3.7, 0, Math.PI * 2);
+    context.arc(sun.x, sun.y, glowRadius, 0, Math.PI * 2);
     context.fill();
     const disk = context.createRadialGradient(
       sun.x - sunRadius * 0.3,
@@ -423,12 +423,16 @@ function drawSunAndMoon(
   }
   if (moon.visible) {
     context.fillStyle = "#02050b";
-    context.strokeStyle = "rgba(226, 235, 245, .45)";
-    context.lineWidth = 1;
     context.beginPath();
     context.arc(moon.x, moon.y, moonRadius, 0, Math.PI * 2);
     context.fill();
+    context.strokeStyle = "rgba(189, 220, 255, .72)";
+    context.lineWidth = 1;
+    context.setLineDash([2, 4]);
+    context.beginPath();
+    context.arc(moon.x, moon.y, Math.max(8, moonRadius * 2), 0, Math.PI * 2);
     context.stroke();
+    context.setLineDash([]);
   }
 
   if (sun.visible) {
@@ -513,7 +517,7 @@ export function drawSkyGuideScene(
   context.font = "600 9px ui-monospace, monospace";
   context.textAlign = "left";
   context.fillText(
-    `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · CELESTIAL DISKS ×${CELESTIAL_DISK_ENLARGEMENT} ANGULAR SCALE`,
+    `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · TRUE-SCALE DISKS · HALOS ARE LOCATORS`,
     12,
     height - 12,
   );
