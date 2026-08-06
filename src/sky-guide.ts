@@ -29,6 +29,7 @@ export type ProjectedDirection = {
 
 export const MIN_SKY_FOV = 25;
 export const MAX_SKY_FOV = 100;
+export const CELESTIAL_DISK_ENLARGEMENT = 8;
 
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 const degrees = (value: number) => (value * 180) / Math.PI;
@@ -120,6 +121,20 @@ export function projectDirection(
     visible:
       depth > 0 && Math.abs(normalizedX) <= 1 && Math.abs(normalizedY) <= 1,
   };
+}
+
+export function projectedAngularRadius(
+  angularRadiusDeg: number,
+  view: Pick<SkyViewState, "fovDeg">,
+  viewportHeight: number,
+  depth = 1,
+) {
+  const angularRadius = radians(clamp(angularRadiusDeg, 0, 89));
+  const halfFov = radians(clamp(view.fovDeg, 1, 179) / 2);
+  return (
+    ((Math.max(viewportHeight, 1) / 2) * Math.tan(angularRadius)) /
+    (Math.tan(halfFov) * Math.max(depth, 0.001))
+  );
 }
 
 export function angularSeparation(

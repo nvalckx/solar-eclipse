@@ -1,10 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
+  CELESTIAL_DISK_ENLARGEMENT,
   angularSeparation,
   canonicalizeDirection,
   directionVector,
   dragSkyView,
   projectDirection,
+  projectedAngularRadius,
   zoomSkyView,
   type SkyViewState,
 } from "../src/sky-guide";
@@ -70,5 +72,46 @@ describe("all-sphere sky projection", () => {
         { azimuthDeg: 90, altitudeDeg: 0 },
       ),
     ).toBeCloseTo(90, 8);
+  });
+
+  test("zooms celestial disks and their separation with the same projection scale", () => {
+    const width = 800;
+    const height = 400;
+    const sun = { azimuthDeg: 0, altitudeDeg: 0 };
+    const moon = { azimuthDeg: 0.35, altitudeDeg: 0 };
+    const geometry = (fovDeg: number) => {
+      const view = { ...northView, fovDeg };
+      const projectedSun = projectDirection(sun, view, width, height);
+      const projectedMoon = projectDirection(moon, view, width, height);
+      const sunRadius = projectedAngularRadius(
+        0.266 * CELESTIAL_DISK_ENLARGEMENT,
+        view,
+        height,
+        projectedSun.depth,
+      );
+      const moonRadius = projectedAngularRadius(
+        0.26 * CELESTIAL_DISK_ENLARGEMENT,
+        view,
+        height,
+        projectedMoon.depth,
+      );
+      return {
+        sunRadius,
+        separationToRadiusRatio:
+          Math.hypot(
+            projectedMoon.x - projectedSun.x,
+            projectedMoon.y - projectedSun.y,
+          ) /
+          (sunRadius + moonRadius),
+      };
+    };
+
+    const zoomedOut = geometry(100);
+    const zoomedIn = geometry(25);
+    expect(zoomedIn.sunRadius).toBeGreaterThan(zoomedOut.sunRadius * 4);
+    expect(zoomedIn.separationToRadiusRatio).toBeCloseTo(
+      zoomedOut.separationToRadiusRatio,
+      10,
+    );
   });
 });

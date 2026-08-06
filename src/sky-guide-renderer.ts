@@ -1,8 +1,10 @@
 import {
+  CELESTIAL_DISK_ENLARGEMENT,
   cameraBasis,
   clamp,
   directionVector,
   edgeIndicator,
+  projectedAngularRadius,
   type SkyViewState,
   type SphericalDirection,
   type Vector3,
@@ -374,14 +376,18 @@ function drawSunAndMoon(
 ) {
   const sun = project(scene.state.sun);
   const moon = project(scene.state.moon);
-  const physicalSunRadius =
-    (scene.state.sun.angularDiameterDeg / 2 / view.fovDeg) * height;
-  const enlargement = Math.max(1, 15 / Math.max(physicalSunRadius, 0.1));
-  const sunRadius = physicalSunRadius * enlargement;
-  const moonRadius =
-    (scene.state.moon.angularDiameterDeg / 2 / view.fovDeg) *
-    height *
-    enlargement;
+  const sunRadius = projectedAngularRadius(
+    (scene.state.sun.angularDiameterDeg / 2) * CELESTIAL_DISK_ENLARGEMENT,
+    view,
+    height,
+    sun.depth,
+  );
+  const moonRadius = projectedAngularRadius(
+    (scene.state.moon.angularDiameterDeg / 2) * CELESTIAL_DISK_ENLARGEMENT,
+    view,
+    height,
+    moon.depth,
+  );
 
   if (sun.visible) {
     const glow = context.createRadialGradient(
@@ -420,7 +426,7 @@ function drawSunAndMoon(
     context.strokeStyle = "rgba(226, 235, 245, .45)";
     context.lineWidth = 1;
     context.beginPath();
-    context.arc(moon.x, moon.y, Math.max(2, moonRadius), 0, Math.PI * 2);
+    context.arc(moon.x, moon.y, moonRadius, 0, Math.PI * 2);
     context.fill();
     context.stroke();
   }
@@ -507,7 +513,7 @@ export function drawSkyGuideScene(
   context.font = "600 9px ui-monospace, monospace";
   context.textAlign = "left";
   context.fillText(
-    `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · CELESTIAL DISKS ENLARGED EQUALLY`,
+    `FOV ${Math.round(clamp(view.fovDeg, 1, 180))}° · CELESTIAL DISKS ×${CELESTIAL_DISK_ENLARGEMENT} ANGULAR SCALE`,
     12,
     height - 12,
   );
