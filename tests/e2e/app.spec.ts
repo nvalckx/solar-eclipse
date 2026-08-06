@@ -113,7 +113,7 @@ test("switches views and controls the timeline and playback", async ({
   );
 });
 
-test("shows the live clock, trajectory contacts, and AR alignment handoff", async ({
+test("shows the live clock, trajectory contacts, and integrated sky guide", async ({
   page,
 }) => {
   await page.locator("#live").scrollIntoViewIfNeeded();
@@ -125,9 +125,16 @@ test("shows the live clock, trajectory contacts, and AR alignment handoff", asyn
   await expect(page.getByTestId("live-event-c1")).toContainText(
     /partial eclipse begins/i,
   );
-  const arCard = page.locator(".ar-ready-card");
-  await expect(arCard).toHaveAttribute("data-ar-target-azimuth", /\d+/);
-  await expect(arCard).toHaveAttribute("data-ar-target-altitude", /-?\d+/);
+  const trajectoryCard = page.getByTestId("sky-trajectory-card");
+  await expect(trajectoryCard).toHaveAttribute(
+    "data-sky-target-azimuth",
+    /\d+/,
+  );
+  await expect(trajectoryCard).toHaveAttribute(
+    "data-sky-target-altitude",
+    /-?\d+/,
+  );
+  await expect(trajectoryCard).toContainText(/drag with a mouse or trackpad/i);
   await page.getByTestId("live-event-c1").click();
   const firstContactTime = await page
     .getByTestId("eclipse-timeline")
@@ -136,6 +143,10 @@ test("shows the live clock, trajectory contacts, and AR alignment handoff", asyn
   await expect(page.getByTestId("eclipse-timeline")).not.toHaveValue(
     firstContactTime,
   );
+  await trajectoryCard.locator("header").click();
+  await expect(page.getByTestId("phone-alignment-dialog")).toBeVisible();
+  await page.getByTestId("close-phone-alignment").click();
+  await expect(trajectoryCard).toBeFocused();
 });
 
 test("enables local contact alerts and follows location changes", async ({
@@ -232,7 +243,7 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
     };
   });
 
-  const opener = page.getByTestId("start-phone-alignment");
+  const opener = page.getByTestId("open-sky-guide");
   await opener.click();
   await expect(page.getByTestId("phone-alignment-dialog")).toBeVisible();
   const canvas = page.getByTestId("sky-sphere-canvas");
@@ -369,7 +380,7 @@ test("falls back to a manual sky finder when camera and motion are denied", asyn
       },
     });
   });
-  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("open-sky-guide").click();
   const canvas = page.getByTestId("sky-sphere-canvas");
   await expect(canvas).toBeVisible();
   await page.getByTestId("sky-guide-compass").click();
@@ -394,7 +405,7 @@ test("falls back to a manual sky finder when camera and motion are denied", asyn
   ).toBeLessThanOrEqual(0);
 });
 
-test("refreshes the phone location before alignment", async ({
+test("refreshes the device location before using the sky guide", async ({
   page,
   context,
 }) => {
@@ -406,7 +417,7 @@ test("refreshes the phone location before alignment", async ({
   await context.grantPermissions(["geolocation"], {
     origin: "http://127.0.0.1:4173",
   });
-  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("open-sky-guide").click();
   await page.getByTestId("refresh-alignment-location").click();
   await expect(
     page.getByTestId("phone-alignment-dialog").getByText(/location refreshed/i),
@@ -438,7 +449,7 @@ test("auto-follows the live eclipse while local contacts are in progress", async
       value: { getUserMedia: async () => Promise.reject(new Error("denied")) },
     });
   });
-  await page.getByTestId("start-phone-alignment").click();
+  await page.getByTestId("open-sky-guide").click();
   await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
     "aria-pressed",
     "true",

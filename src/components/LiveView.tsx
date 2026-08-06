@@ -12,7 +12,7 @@ type Props = {
   zoneName: string;
   onChangeLocation: (opener: HTMLButtonElement) => void;
   onPreviewTime: (date: Date) => void;
-  onStartAlignment: (opener: HTMLButtonElement) => void;
+  onOpenSkyGuide: (opener: HTMLElement) => void;
   onConfigureAlerts: (opener: HTMLButtonElement) => void;
   alertsEnabled: boolean;
 };
@@ -31,7 +31,7 @@ export function LiveView({
   zoneName,
   onChangeLocation,
   onPreviewTime,
-  onStartAlignment,
+  onOpenSkyGuide,
   onConfigureAlerts,
   alertsEnabled,
 }: Props) {
@@ -46,10 +46,10 @@ export function LiveView({
       : situation.phase === "after"
         ? window.peak
         : now;
-  const arTargetDate = situation.nextEvent?.time ?? window.peak;
-  const arTarget = useMemo(
-    () => calculateSkyState(arTargetDate, location, window),
-    [arTargetDate, location, window],
+  const guideTargetDate = situation.nextEvent?.time ?? window.peak;
+  const guideTarget = useMemo(
+    () => calculateSkyState(guideTargetDate, location, window),
+    [guideTargetDate, location, window],
   );
   const nextCountdown = situation.nextEvent
     ? formatCountdown(situation.nextEvent.time.getTime() - now.getTime())
@@ -146,7 +146,24 @@ export function LiveView({
           </div>
         </article>
 
-        <article className="trajectory-card">
+        <article
+          className="trajectory-card interactive"
+          data-testid="sky-trajectory-card"
+          data-sky-target-azimuth={Math.round(guideTarget.sun.azimuthDeg)}
+          data-sky-target-altitude={Math.round(guideTarget.sun.altitudeDeg)}
+          tabIndex={0}
+          aria-label="Your sky trajectory. Open the interactive all-sphere sky guide."
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button, a")) return;
+            onOpenSkyGuide(event.currentTarget);
+          }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            onOpenSkyGuide(event.currentTarget);
+          }}
+        >
           <header>
             <div>
               <span className="kicker">YOUR SKY TRAJECTORY</span>
@@ -161,63 +178,25 @@ export function LiveView({
             formatTime={(date) => formatTime(date)}
             onSelectTime={onPreviewTime}
           />
-        </article>
-
-        <article
-          className="ar-ready-card"
-          data-ar-target-azimuth={Math.round(arTarget.sun.azimuthDeg)}
-          data-ar-target-altitude={Math.round(arTarget.sun.altitudeDeg)}
-        >
-          <div className="ar-phone" aria-hidden="true">
-            <span className="ar-horizon" />
-            <span className="ar-reticle">
-              <i />
+          <footer className="trajectory-guide-note">
+            <span className="trajectory-guide-icon" aria-hidden="true">
+              ◎
             </span>
-            <span className="ar-bearing">
-              {Math.round(arTarget.sun.azimuthDeg)}°{" "}
-              {directionFor(arTarget.sun.azimuthDeg)}
-            </span>
-            <span className="ar-altitude">
-              {Math.round(arTarget.sun.altitudeDeg)}° up
-            </span>
-          </div>
-          <div className="ar-copy">
-            <span className="kicker">PHONE SKY GUIDE · CAMERA + COMPASS</span>
-            <h3>Point your phone. Find the Sun.</h3>
-            <p>
-              Check your viewing direction before eclipse day, or follow the
-              event live. Your phone’s camera, compass, and tilt sensors guide
-              the reticle to the calculated position in your sky.
-            </p>
-            <dl className="ar-target-readout">
-              <div>
-                <dt>Target event</dt>
-                <dd>{situation.nextEvent?.label ?? "Maximum eclipse"}</dd>
-              </div>
-              <div>
-                <dt>Point toward</dt>
-                <dd>
-                  {Math.round(arTarget.sun.azimuthDeg)}°{" "}
-                  {directionFor(arTarget.sun.azimuthDeg)}
-                </dd>
-              </div>
-              <div>
-                <dt>Tilt up</dt>
-                <dd>{Math.round(arTarget.sun.altitudeDeg)}°</dd>
-              </div>
-            </dl>
+            <div>
+              <strong>Explore your view in every direction.</strong>
+              <small>
+                Open the all-sphere sky guide. Drag with a mouse or trackpad on
+                a computer; swipe or follow the compass on a phone.
+              </small>
+            </div>
             <button
               className="secondary-button"
-              data-testid="start-phone-alignment"
-              onClick={(event) => onStartAlignment(event.currentTarget)}
+              data-testid="open-sky-guide"
+              onClick={(event) => onOpenSkyGuide(event.currentTarget)}
             >
-              Start phone alignment
+              Open sky guide <span aria-hidden="true">↗</span>
             </button>
-            <small className="ar-note">
-              Permissions are requested only after you start. A manual guide is
-              always available.
-            </small>
-          </div>
+          </footer>
         </article>
       </div>
     </section>

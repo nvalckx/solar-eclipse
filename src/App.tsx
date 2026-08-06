@@ -131,7 +131,7 @@ export function App() {
   const locationReturnRef = useRef<HTMLButtonElement | null>(null);
   const pathButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
-  const alignmentReturnRef = useRef<HTMLButtonElement | null>(null);
+  const alignmentReturnRef = useRef<HTMLElement | null>(null);
   const notificationReturnRef = useRef<HTMLButtonElement | null>(null);
 
   const eclipseWindow = useMemo(() => eclipseWindowFor(location), [location]);
@@ -531,10 +531,10 @@ export function App() {
           zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
           onChangeLocation={openLocation}
           onPreviewTime={previewFromLive}
-          onStartAlignment={(opener) => {
+          onOpenSkyGuide={(opener) => {
             alignmentReturnRef.current = opener;
             setShowAlignment(true);
-            setAnnouncement("Phone alignment setup opened.");
+            setAnnouncement("All-sphere sky guide opened.");
           }}
           alertsEnabled={
             alertPreferences.enabled &&
@@ -729,7 +729,7 @@ export function App() {
           onLocationChange={updateAlignmentLocation}
           onClose={() => {
             setShowAlignment(false);
-            setAnnouncement("Phone alignment closed.");
+            setAnnouncement("All-sphere sky guide closed.");
             requestAnimationFrame(() => alignmentReturnRef.current?.focus());
           }}
         />

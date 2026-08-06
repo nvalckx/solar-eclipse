@@ -230,12 +230,12 @@ export function PhoneAlignmentDialog({
   const refreshLocation = () => {
     if (!navigator.geolocation) {
       setLocationMessage(
-        "Phone location is unavailable; keeping the selected place.",
+        "Device location is unavailable; keeping the selected place.",
       );
       return;
     }
     setLocating(true);
-    setLocationMessage("Finding this phone’s location…");
+    setLocationMessage("Finding this device’s location…");
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const next: ObserverLocation = {
@@ -284,7 +284,7 @@ export function PhoneAlignmentDialog({
     headingsRef.current = [];
     setReading(null);
     setJitter(0);
-    setSensorMessage("Waiting for a phone orientation reading…");
+    setSensorMessage("Waiting for a device orientation reading…");
     modeRef.current = "sensor";
     setMode("sensor");
     const result = await startOrientationSensor(
@@ -359,7 +359,7 @@ export function PhoneAlignmentDialog({
     modeRef.current = "explore";
     setMode("explore");
     setSensorMessage(
-      "Explore mode · tap the compass to resume phone tracking.",
+      "Explore mode · use the orientation control to resume sensor tracking.",
     );
   };
 
@@ -406,7 +406,7 @@ export function PhoneAlignmentDialog({
       modeRef.current = "sensor";
       setMode("sensor");
       setCameraMessage(
-        "Camera access is unavailable; phone tracking is still active.",
+        "Camera access is unavailable; device tracking is still active.",
       );
     }
   };
@@ -536,7 +536,7 @@ export function PhoneAlignmentDialog({
           </div>
           <button
             className="icon-button"
-            aria-label="Close phone alignment"
+            aria-label="Close sky guide"
             data-testid="close-phone-alignment"
             onClick={close}
           >
@@ -677,8 +677,8 @@ export function PhoneAlignmentDialog({
               >
                 ◉{" "}
                 {orientationRef.current
-                  ? "Resume compass"
-                  : "Use phone compass"}
+                  ? "Resume tracking"
+                  : "Use device orientation"}
               </button>
               <button
                 className={mode === "ar" ? "active" : ""}
@@ -736,7 +736,7 @@ export function PhoneAlignmentDialog({
                 onClick={refreshLocation}
                 data-testid="refresh-alignment-location"
               >
-                {locating ? "Locating…" : "Refresh phone location"}
+                {locating ? "Locating…" : "Refresh device location"}
               </button>
               <p role="status">{locationMessage}</p>
             </div>
@@ -744,7 +744,7 @@ export function PhoneAlignmentDialog({
               <strong>Drag anywhere. Look everywhere.</strong>
               <p>
                 Swipe or drag across the full sphere. Pinch or scroll to zoom.
-                Moving the map pauses phone tracking.
+                Moving the map pauses sensor tracking.
               </p>
               <p role="status">{sensorMessage}</p>
               {cameraMessage && <p role="status">{cameraMessage}</p>}
