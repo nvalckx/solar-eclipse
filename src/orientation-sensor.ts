@@ -1,7 +1,9 @@
 import { magneticDeclination } from "./magnetic-declination";
 import {
+  cameraOrientationFromAcceleration,
   cameraOrientationFromAngles,
   normalizeDegrees,
+  signedAngleDelta,
   type OrientationReading,
 } from "./phone-alignment";
 import type { ObserverLocation } from "./types";
@@ -10,6 +12,10 @@ type PermissionState = "granted" | "denied" | "prompt";
 
 type OrientationConstructor = typeof DeviceOrientationEvent & {
   requestPermission?: (absolute?: boolean) => Promise<PermissionState>;
+};
+
+type MotionConstructor = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<PermissionState>;
 };
 
 type WebKitOrientationEvent = DeviceOrientationEvent & {
@@ -29,6 +35,7 @@ export type OrientationEventValues = {
 export type OrientationController = {
   stop: () => void;
   source: "listening";
+  getCapability: () => OrientationReading["capability"];
 };
 
 export type OrientationStartResult =
@@ -50,13 +57,13 @@ export function orientationReadingFromEvent(
   if (
     !Number.isFinite(values.beta) ||
     !Number.isFinite(values.gamma) ||
-    (values.absolute && !Number.isFinite(values.alpha))
+    (!Number.isFinite(values.alpha) && !Number.isFinite(webkitHeading))
   )
     return null;
-  if (!values.absolute && !Number.isFinite(webkitHeading)) return null;
-  const alpha = values.absolute
-    ? values.alpha!
-    : normalizeDegrees(360 - (webkitHeading! + magneticDeclinationDeg));
+  const magnetic = !values.absolute && Number.isFinite(webkitHeading);
+  const alpha = magnetic
+    ? normalizeDegrees(360 - (webkitHeading! + magneticDeclinationDeg))
+    : values.alpha!;
   const projected = cameraOrientationFromAngles(
     alpha,
     values.beta!,
@@ -70,7 +77,12 @@ export function orientationReadingFromEvent(
       values.webkitCompassAccuracy >= 0
         ? values.webkitCompassAccuracy
         : undefined,
-    source: values.absolute ? "absolute" : "webkit-magnetic",
+    source: values.absolute
+      ? "absolute"
+      : magnetic
+        ? "webkit-magnetic"
+        : "relative",
+    capability: values.absolute || magnetic ? "absolute" : "relative",
     timestamp,
   };
 }
@@ -78,17 +90,24 @@ export function orientationReadingFromEvent(
 export async function startOrientationSensor(
   location: ObserverLocation,
   onReading: (reading: OrientationReading) => void,
+  initialHeadingDeg = 0,
 ): Promise<OrientationStartResult> {
-  if (!window.isSecureContext || !("DeviceOrientationEvent" in window)) {
+  if (
+    !window.isSecureContext ||
+    (!("DeviceOrientationEvent" in window) && !("DeviceMotionEvent" in window))
+  ) {
     return {
       source: "unsupported",
       message: "Motion sensors are unavailable in this browser.",
     };
   }
 
-  const constructor = window.DeviceOrientationEvent as OrientationConstructor;
+  const constructor = window.DeviceOrientationEvent as
+    OrientationConstructor | undefined;
+  const motionConstructor = window.DeviceMotionEvent as
+    MotionConstructor | undefined;
   try {
-    if (typeof constructor.requestPermission === "function") {
+    if (typeof constructor?.requestPermission === "function") {
       let permission: PermissionState;
       try {
         permission = await constructor.requestPermission(true);
@@ -103,6 +122,16 @@ export async function startOrientationSensor(
         };
       }
     }
+    if (
+      !constructor &&
+      typeof motionConstructor?.requestPermission === "function" &&
+      (await motionConstructor.requestPermission()) !== "granted"
+    ) {
+      return {
+        source: "denied",
+        message: "Motion access was denied. Drag the sky to explore instead.",
+      };
+    }
   } catch {
     return {
       source: "error",
@@ -111,12 +140,29 @@ export async function startOrientationSensor(
   }
 
   let receivedAbsolute = false;
+  let receivedOrientation = false;
+  let relativeOffset: number | null = null;
+  let lastHeading = initialHeadingDeg;
+  let capability: OrientationReading["capability"] = "none";
+  let pending: OrientationReading | null = null;
+  let frame = 0;
   const declination = magneticDeclination(
     location.latitude,
     location.longitude,
     location.elevationMeters,
     new Date(),
   );
+
+  const emit = (reading: OrientationReading) => {
+    pending = reading;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!pending) return;
+      onReading(pending);
+      pending = null;
+    });
+  };
 
   const read = (event: Event) => {
     const orientation = event as WebKitOrientationEvent;
@@ -125,7 +171,7 @@ export async function startOrientationSensor(
     if (isAbsoluteEvent) receivedAbsolute = true;
     if (!isAbsoluteEvent && receivedAbsolute) return;
 
-    const reading = orientationReadingFromEvent(
+    let reading = orientationReadingFromEvent(
       {
         alpha: orientation.alpha,
         beta: orientation.beta,
@@ -138,16 +184,62 @@ export async function startOrientationSensor(
       screenAngle(),
       performance.now(),
     );
-    if (reading) onReading(reading);
+    if (!reading) return;
+    receivedOrientation = true;
+    if (reading.source === "relative") {
+      relativeOffset ??= signedAngleDelta(
+        reading.headingDeg,
+        initialHeadingDeg,
+      );
+      reading = {
+        ...reading,
+        headingDeg: normalizeDegrees(reading.headingDeg + relativeOffset),
+      };
+    }
+    lastHeading = reading.headingDeg;
+    capability = reading.capability;
+    emit(reading);
   };
 
-  window.addEventListener("deviceorientationabsolute", read);
-  window.addEventListener("deviceorientation", read);
+  const readMotion = (event: DeviceMotionEvent) => {
+    if (receivedOrientation) return;
+    const gravity = event.accelerationIncludingGravity;
+    if (
+      !gravity ||
+      !Number.isFinite(gravity.x) ||
+      !Number.isFinite(gravity.y) ||
+      !Number.isFinite(gravity.z)
+    )
+      return;
+    const projected = cameraOrientationFromAcceleration(
+      gravity.x!,
+      gravity.y!,
+      gravity.z!,
+      lastHeading,
+      screenAngle(),
+    );
+    capability = "tilt";
+    emit({
+      ...projected,
+      source: "tilt",
+      capability: "tilt",
+      timestamp: performance.now(),
+    });
+  };
+
+  if (constructor) {
+    window.addEventListener("deviceorientationabsolute", read);
+    window.addEventListener("deviceorientation", read);
+  }
+  window.addEventListener("devicemotion", readMotion);
   return {
     source: "listening",
+    getCapability: () => capability,
     stop: () => {
+      cancelAnimationFrame(frame);
       window.removeEventListener("deviceorientationabsolute", read);
       window.removeEventListener("deviceorientation", read);
+      window.removeEventListener("devicemotion", readMotion);
     },
   };
 }

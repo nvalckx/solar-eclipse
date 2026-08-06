@@ -1,4 +1,7 @@
 import { signedAngleDelta } from "./phone-alignment";
+import type { SkyViewState } from "./sky-guide";
+import { drawSkyGuideScene } from "./sky-guide-renderer";
+import type { SkyGuideScene } from "./sky-guide-scene";
 import type { SkyState } from "./types";
 
 export type AlignmentPhotoMetadata = {
@@ -7,6 +10,11 @@ export type AlignmentPhotoMetadata = {
   eventLabel: string;
   eventTime: string;
   directionLabel: string;
+};
+
+export type AlignmentPhotoSkyOverlay = {
+  scene: SkyGuideScene;
+  view: SkyViewState;
 };
 
 function drawReticle(
@@ -129,10 +137,33 @@ export function drawAlignmentPhotoOverlay(
   context.fillText(metadata.eventTime, padding, height - padding);
 }
 
+function drawSkyOverlay(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  overlay: AlignmentPhotoSkyOverlay,
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const overlayContext = canvas.getContext("2d");
+  if (!overlayContext) return;
+  drawSkyGuideScene(
+    overlayContext,
+    width,
+    height,
+    overlay.scene,
+    overlay.view,
+    { transparent: true },
+  );
+  context.drawImage(canvas, 0, 0, width, height);
+}
+
 export async function captureAlignmentPhoto(
   video: HTMLVideoElement,
   state: SkyState,
   metadata: AlignmentPhotoMetadata,
+  skyOverlay?: AlignmentPhotoSkyOverlay,
 ) {
   if (!video.videoWidth || !video.videoHeight) {
     throw new Error("The camera is not ready yet.");
@@ -143,13 +174,21 @@ export async function captureAlignmentPhoto(
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Photo capture is unavailable.");
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  drawAlignmentPhotoOverlay(
-    context,
-    canvas.width,
-    canvas.height,
-    state,
-    metadata,
-  );
+  if (metadata.includeOverlay && skyOverlay) {
+    drawSkyOverlay(context, canvas.width, canvas.height, skyOverlay);
+    drawAlignmentPhotoOverlay(context, canvas.width, canvas.height, state, {
+      ...metadata,
+      showEclipse: false,
+    });
+  } else {
+    drawAlignmentPhotoOverlay(
+      context,
+      canvas.width,
+      canvas.height,
+      state,
+      metadata,
+    );
+  }
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) =>

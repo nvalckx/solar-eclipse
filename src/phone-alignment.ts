@@ -1,4 +1,14 @@
-export type OrientationSource = "absolute" | "webkit-magnetic";
+import type { SensorCapability } from "./sky-guide";
+
+export type OrientationSource =
+  "absolute" | "webkit-magnetic" | "relative" | "tilt";
+
+export type OrientationQuaternion = readonly [
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+];
 
 export type OrientationReading = {
   headingDeg: number;
@@ -6,6 +16,8 @@ export type OrientationReading = {
   rollDeg: number;
   accuracyDeg?: number;
   source: OrientationSource;
+  capability?: SensorCapability;
+  quaternion?: OrientationQuaternion;
   timestamp: number;
 };
 
@@ -53,10 +65,60 @@ export function cameraOrientationFromAngles(
   const east = -cosA * sinG - sinA * sinB * cosG;
   const north = -sinA * sinG + cosA * sinB * cosG;
   const up = -cosB * cosG;
+  const headingDeg = normalizeDegrees(
+    (Math.atan2(east, north) * 180) / Math.PI,
+  );
+  const altitudeDeg =
+    (Math.asin(Math.max(-1, Math.min(1, up))) * 180) / Math.PI;
+  const rollDeg = signedAngleDelta(0, gammaDeg + screenAngleDeg);
   return {
-    headingDeg: normalizeDegrees((Math.atan2(east, north) * 180) / Math.PI),
-    altitudeDeg: (Math.asin(Math.max(-1, Math.min(1, up))) * 180) / Math.PI,
-    rollDeg: signedAngleDelta(0, gammaDeg + screenAngleDeg),
+    headingDeg,
+    altitudeDeg,
+    rollDeg,
+    quaternion: cameraQuaternion(headingDeg, altitudeDeg, rollDeg),
+  };
+}
+
+export function cameraQuaternion(
+  headingDeg: number,
+  altitudeDeg: number,
+  rollDeg: number,
+): OrientationQuaternion {
+  const halfHeading = (headingDeg * Math.PI) / 360;
+  const halfAltitude = (-altitudeDeg * Math.PI) / 360;
+  const halfRoll = (rollDeg * Math.PI) / 360;
+  const cy = Math.cos(halfHeading);
+  const sy = Math.sin(halfHeading);
+  const cp = Math.cos(halfAltitude);
+  const sp = Math.sin(halfAltitude);
+  const cr = Math.cos(halfRoll);
+  const sr = Math.sin(halfRoll);
+  return [
+    sr * cp * cy - cr * sp * sy,
+    cr * sp * cy + sr * cp * sy,
+    cr * cp * sy - sr * sp * cy,
+    cr * cp * cy + sr * sp * sy,
+  ];
+}
+
+export function cameraOrientationFromAcceleration(
+  x: number,
+  y: number,
+  z: number,
+  headingDeg: number,
+  screenAngleDeg = 0,
+) {
+  const screen = (screenAngleDeg * Math.PI) / 180;
+  const screenX = x * Math.cos(screen) - y * Math.sin(screen);
+  const screenY = x * Math.sin(screen) + y * Math.cos(screen);
+  const altitudeDeg =
+    (Math.atan2(z, Math.hypot(screenX, screenY)) * 180) / Math.PI;
+  const rollDeg = (Math.atan2(screenX, screenY) * 180) / Math.PI;
+  return {
+    headingDeg: normalizeDegrees(headingDeg),
+    altitudeDeg,
+    rollDeg,
+    quaternion: cameraQuaternion(headingDeg, altitudeDeg, rollDeg),
   };
 }
 
@@ -78,17 +140,21 @@ export function smoothReading(
   factor = 0.22,
 ): OrientationReading {
   if (!previous) return next;
+  const headingDeg = normalizeDegrees(
+    previous.headingDeg +
+      signedAngleDelta(previous.headingDeg, next.headingDeg) * factor,
+  );
+  const altitudeDeg =
+    previous.altitudeDeg + (next.altitudeDeg - previous.altitudeDeg) * factor;
+  const rollDeg =
+    previous.rollDeg +
+    signedAngleDelta(previous.rollDeg, next.rollDeg) * factor;
   return {
     ...next,
-    headingDeg: normalizeDegrees(
-      previous.headingDeg +
-        signedAngleDelta(previous.headingDeg, next.headingDeg) * factor,
-    ),
-    altitudeDeg:
-      previous.altitudeDeg + (next.altitudeDeg - previous.altitudeDeg) * factor,
-    rollDeg:
-      previous.rollDeg +
-      signedAngleDelta(previous.rollDeg, next.rollDeg) * factor,
+    headingDeg,
+    altitudeDeg,
+    rollDeg,
+    quaternion: cameraQuaternion(headingDeg, altitudeDeg, rollDeg),
   };
 }
 

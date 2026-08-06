@@ -49,5 +49,10 @@ export default defineConfig({
       grep: /@smoke/,
       use: { ...devices["Desktop Safari"] },
     },
+    {
+      name: "mobile-webkit",
+      grep: /@smoke/,
+      use: { ...devices["iPhone 13"], browserName: "webkit" },
+    },
   ],
 });

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { magneticDeclination } from "../src/magnetic-declination";
 import { orientationReadingFromEvent } from "../src/orientation-sensor";
 import {
+  cameraOrientationFromAcceleration,
   alignmentGuidance,
   alignmentMarkerPosition,
   cameraOrientationFromAngles,
@@ -115,6 +116,24 @@ describe("phone alignment math", () => {
       accuracyDeg: 6,
       source: "webkit-magnetic",
     });
+  });
+
+  test("keeps relative orientation and provides accelerometer tilt fallback", () => {
+    const relative = orientationReadingFromEvent(
+      { alpha: 20, beta: 90, gamma: 0, absolute: false },
+      0,
+      0,
+      3,
+    );
+    expect(relative).toMatchObject({
+      source: "relative",
+      capability: "relative",
+    });
+    expect(relative?.quaternion).toHaveLength(4);
+
+    const tilt = cameraOrientationFromAcceleration(0, 0, 9.8, 120);
+    expect(tilt).toMatchObject({ headingDeg: 120, altitudeDeg: 90 });
+    expect(tilt.quaternion).toHaveLength(4);
   });
 });
 

@@ -181,7 +181,7 @@ test("enables local contact alerts and follows location changes", async ({
   ).toBeChecked();
 });
 
-test("starts camera alignment with an absolute compass and restores focus", async ({
+test("explores the full sphere, follows the compass, and enables camera AR", async ({
   page,
 }) => {
   await page.evaluate(() => {
@@ -208,9 +208,12 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
     HTMLCanvasElement.prototype.getContext = () =>
       ({
         drawImage: () => undefined,
+        clearRect: () => undefined,
+        setTransform: () => undefined,
         save: () => undefined,
         restore: () => undefined,
         beginPath: () => undefined,
+        closePath: () => undefined,
         arc: () => undefined,
         stroke: () => undefined,
         moveTo: () => undefined,
@@ -218,6 +221,10 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
         fill: () => undefined,
         fillRect: () => undefined,
         fillText: () => undefined,
+        setLineDash: () => undefined,
+        translate: () => undefined,
+        rotate: () => undefined,
+        createLinearGradient: () => ({ addColorStop: () => undefined }),
         createRadialGradient: () => ({ addColorStop: () => undefined }),
       }) as unknown as CanvasRenderingContext2D;
     HTMLCanvasElement.prototype.toBlob = function (callback) {
@@ -228,12 +235,29 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
   const opener = page.getByTestId("start-phone-alignment");
   await opener.click();
   await expect(page.getByTestId("phone-alignment-dialog")).toBeVisible();
-  await expect(page.getByText(/protect your eyes and camera/i)).toBeVisible();
-  await page.getByTestId("begin-phone-alignment").click();
+  const canvas = page.getByTestId("sky-sphere-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(page.getByText("Explore mode", { exact: true })).toBeVisible();
   await expect(page.getByTestId("alignment-event-max")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  const initialHeading = await canvas.getAttribute("data-heading");
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box!.x + box!.width / 2 + 100,
+    box!.y + box!.height / 2,
+  );
+  await page.mouse.up();
+  await expect(canvas).not.toHaveAttribute(
+    "data-heading",
+    initialHeading ?? "",
+  );
+
+  await page.getByTestId("sky-guide-compass").click();
   await page.evaluate(() => {
     const event = new Event("deviceorientationabsolute");
     for (const [key, value] of Object.entries({
@@ -246,18 +270,10 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
     }
     window.dispatchEvent(event);
   });
-  await expect(page.locator(".alignment-target")).toHaveAttribute(
-    "data-quality",
-    "good",
-  );
-  const camera = page.getByTestId("alignment-camera");
-  await expect(camera).toBeVisible();
-  await expect(camera).toHaveAttribute("autoplay", "");
-  await expect(camera).toHaveAttribute("playsinline", "");
-  await expect(camera).toHaveClass(/camera-ready/);
-
-  const marker = page.getByTestId("alignment-target-marker");
-  const initialMarkerPosition = await marker.getAttribute("style");
+  await expect(
+    page.getByText("Compass tracking", { exact: true }),
+  ).toBeVisible();
+  const sensorHeading = await canvas.getAttribute("data-heading");
   await page.evaluate(() => {
     for (let reading = 0; reading < 8; reading += 1) {
       const event = new Event("deviceorientationabsolute");
@@ -273,32 +289,44 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
     }
   });
   await expect
-    .poll(() => marker.getAttribute("style"))
-    .not.toBe(initialMarkerPosition);
+    .poll(() => canvas.getAttribute("data-heading"))
+    .not.toBe(sensorHeading);
 
-  await camera.dispatchEvent("stalled");
-  await expect(camera).not.toHaveClass(/camera-ready/);
+  const trackedHeading = await canvas.getAttribute("data-heading");
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box!.x + box!.width / 2 - 70,
+    box!.y + box!.height / 2 + 30,
+  );
+  await page.mouse.up();
+  await expect(page.getByText("Explore mode", { exact: true })).toBeVisible();
+  await expect(canvas).not.toHaveAttribute(
+    "data-heading",
+    trackedHeading ?? "",
+  );
+  await page.getByTestId("sky-guide-compass").click();
   await expect(
-    page.getByRole("button", { name: "Resume camera" }),
+    page.getByText("Compass tracking", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Resume camera" }).click();
-  await expect(camera).toHaveClass(/camera-ready/);
 
-  await page.getByTestId("open-manual-horizon").click();
-  await expect(page.getByTestId("manual-horizon-control")).toBeVisible();
-  await expect(page.getByTestId("return-to-compass")).toBeVisible();
-  await page.getByTestId("return-to-compass").click();
+  await page.getByTestId("sky-guide-camera").click();
+  const camera = page.getByTestId("alignment-camera");
+  await expect(camera).toBeVisible();
+  await expect(camera).toHaveAttribute("autoplay", "");
+  await expect(camera).toHaveAttribute("playsinline", "");
+  await expect(camera).toHaveClass(/camera-ready/);
 
   await page.getByTestId("take-alignment-photo").click();
   await expect(page.getByTestId("alignment-photo-review")).toContainText(
-    /AR overlay included/i,
+    /sky overlay included/i,
   );
   await expect(page.getByTestId("save-alignment-photo")).toHaveAttribute(
     "download",
     /-ar\.jpg$/,
   );
   await page.getByRole("button", { name: "Retake" }).click();
-  await page.getByText("Include AR overlay", { exact: true }).click();
+  await page.getByText("Include sky overlay", { exact: true }).click();
   await expect(page.getByTestId("photo-overlay-toggle")).not.toBeChecked();
   await expect(page.getByTestId("take-alignment-photo")).toHaveAttribute(
     "aria-label",
@@ -313,6 +341,12 @@ test("starts camera alignment with an absolute compass and restores focus", asyn
     /-camera\.jpg$/,
   );
   await page.getByRole("button", { name: "Retake" }).click();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2 + 60, box!.y + box!.height / 2);
+  await page.mouse.up();
+  await expect(page.getByText("Explore mode", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("alignment-camera")).toHaveCount(0);
   await page.getByTestId("close-phone-alignment").click();
   await expect(opener).toBeFocused();
 });
@@ -336,19 +370,19 @@ test("falls back to a manual sky finder when camera and motion are denied", asyn
     });
   });
   await page.getByTestId("start-phone-alignment").click();
-  await page.getByTestId("begin-phone-alignment").click();
+  const canvas = page.getByTestId("sky-sphere-canvas");
+  await expect(canvas).toBeVisible();
+  await page.getByTestId("sky-guide-compass").click();
   await expect(page.getByText(/motion access was denied/i)).toBeVisible();
-  await expect(page.getByText(/camera unavailable/i)).toBeVisible();
   await expect(
     page.getByTestId("phone-alignment-dialog").locator(".alignment-quality"),
-  ).toHaveText("Manual 360° horizon");
-  await expect(page.getByTestId("manual-horizon-control")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Move manual horizon right 15 degrees" })
-    .click();
-  await expect(page.getByTestId("manual-horizon-heading")).toHaveValue("15");
-  await page.getByRole("button", { name: "Jump to target bearing" }).click();
-  await expect(page.locator(".alignment-eclipse")).toHaveClass(/visible/);
+  ).toHaveText("Explore mode");
+  await expect(page.getByTestId("sky-guide-camera")).toBeDisabled();
+  const heading = await canvas.getAttribute("data-heading");
+  await canvas.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(canvas).not.toHaveAttribute("data-heading", heading ?? "");
+  await page.getByTestId("center-sky-target").click();
   const accessibility = await new AxeBuilder({ page })
     .include("[data-testid='phone-alignment-dialog']")
     .analyze();
@@ -375,7 +409,7 @@ test("refreshes the phone location before alignment", async ({
   await page.getByTestId("start-phone-alignment").click();
   await page.getByTestId("refresh-alignment-location").click();
   await expect(
-    page.getByTestId("phone-alignment-dialog").getByRole("status"),
+    page.getByTestId("phone-alignment-dialog").getByText(/location refreshed/i),
   ).toContainText(/accurate to about 24 m/i);
   await expect(
     page
@@ -405,16 +439,16 @@ test("auto-follows the live eclipse while local contacts are in progress", async
     });
   });
   await page.getByTestId("start-phone-alignment").click();
-  await page.getByTestId("begin-phone-alignment").click();
   await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await page.getByTestId("alignment-event-max").click();
-  await expect(
-    page.getByRole("button", { name: /return to live/i }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: /return to live/i }).click();
+  await expect(page.getByTestId("alignment-event-max")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("alignment-event-live").click();
   await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
     "aria-pressed",
     "true",
