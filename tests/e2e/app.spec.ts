@@ -248,6 +248,16 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
   await expect(page.getByTestId("phone-alignment-dialog")).toBeVisible();
   const canvas = page.getByTestId("sky-sphere-canvas");
   await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute(
+    "aria-label",
+    /full 360 degree dashed Sun and Moon trajectories/i,
+  );
+  expect(
+    Number(await canvas.getAttribute("data-sun-trajectory-points")),
+  ).toBeGreaterThanOrEqual(145);
+  expect(
+    Number(await canvas.getAttribute("data-moon-trajectory-points")),
+  ).toBeGreaterThanOrEqual(145);
   await expect(page.getByText("Explore mode", { exact: true })).toBeVisible();
   await expect(page.getByTestId("alignment-event-max")).toHaveAttribute(
     "aria-pressed",

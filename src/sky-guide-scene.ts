@@ -19,8 +19,13 @@ export type SkyGuideScene = {
   targetLabel: string;
   targetObservable: boolean;
   stars: SkyGuideStar[];
-  trajectory: SkyGuideTrajectoryPoint[];
+  sunTrajectory: SkyGuideTrajectoryPoint[];
+  moonTrajectory: SkyGuideTrajectoryPoint[];
 };
+
+const SUN_APPARENT_REVOLUTION_MS = 24 * 60 * 60 * 1000;
+const MOON_APPARENT_REVOLUTION_MS = (24 * 60 + 50) * 60 * 1000;
+const TRAJECTORY_SEGMENTS = 144;
 
 // J2000 coordinates for a compact selection of the brightest named stars.
 // Values are from the public-domain Yale Bright Star Catalogue, 5th edition.
@@ -77,6 +82,43 @@ function starPositions(date: Date, location: ObserverLocation): SkyGuideStar[] {
   });
 }
 
+function bodyTrajectory(
+  body: Astronomy.Body,
+  centerTime: Date,
+  observer: Astronomy.Observer,
+  revolutionMs: number,
+  eventByTime?: ReadonlyMap<number, { key: string; label: string; time: Date }>,
+): SkyGuideTrajectoryPoint[] {
+  const start = centerTime.getTime() - revolutionMs / 2;
+  const sampleTimes = Array.from(
+    { length: TRAJECTORY_SEGMENTS + 1 },
+    (_, index) =>
+      Math.round(start + (revolutionMs * index) / TRAJECTORY_SEGMENTS),
+  );
+  eventByTime?.forEach((event) => sampleTimes.push(event.time.getTime()));
+
+  return [...new Set(sampleTimes)]
+    .sort((left, right) => left - right)
+    .map((timestamp) => {
+      const time = new Astronomy.AstroTime(new Date(timestamp));
+      const equator = Astronomy.Equator(body, time, observer, true, true);
+      const horizon = Astronomy.Horizon(
+        time,
+        observer,
+        equator.ra,
+        equator.dec,
+        "normal",
+      );
+      const event = eventByTime?.get(timestamp);
+      return {
+        azimuthDeg: horizon.azimuth,
+        altitudeDeg: horizon.altitude,
+        key: event?.key,
+        label: event?.label,
+      };
+    });
+}
+
 export function createSkyGuideScene(
   targetTime: Date,
   targetLabel: string,
@@ -88,33 +130,31 @@ export function createSkyGuideScene(
   const eventByTime = new Map(
     events.map((event) => [event.time.getTime(), event] as const),
   );
-  const duration = window.end.getTime() - window.start.getTime();
-  const sampleTimes = Array.from({ length: 49 }, (_, index) =>
-    Math.round(window.start.getTime() + (duration * index) / 48),
+  const observer = new Astronomy.Observer(
+    location.latitude,
+    location.longitude,
+    location.elevationMeters,
   );
-  events.forEach((event) => sampleTimes.push(event.time.getTime()));
-  const trajectory = [...new Set(sampleTimes)]
-    .sort((left, right) => left - right)
-    .map((timestamp) => {
-      const point = calculateSkyState(
-        new Date(timestamp),
-        location,
-        window,
-      ).sun;
-      const event = eventByTime.get(timestamp);
-      return {
-        azimuthDeg: point.azimuthDeg,
-        altitudeDeg: point.altitudeDeg,
-        key: event?.key,
-        label: event?.label,
-      };
-    });
+  const sunTrajectory = bodyTrajectory(
+    Astronomy.Body.Sun,
+    window.peak,
+    observer,
+    SUN_APPARENT_REVOLUTION_MS,
+    eventByTime,
+  );
+  const moonTrajectory = bodyTrajectory(
+    Astronomy.Body.Moon,
+    window.peak,
+    observer,
+    MOON_APPARENT_REVOLUTION_MS,
+  );
   return {
     state,
     target: state.sun,
     targetLabel,
     targetObservable: state.sun.altitudeDeg > -0.833,
     stars: starPositions(targetTime, location),
-    trajectory,
+    sunTrajectory,
+    moonTrajectory,
   };
 }

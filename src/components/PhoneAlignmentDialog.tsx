@@ -747,6 +747,13 @@ export function PhoneAlignmentDialog({
             </div>
             <div className="sky-guide-help">
               <strong>Drag anywhere. Look everywhere.</strong>
+              <div
+                className="sky-trajectory-legend"
+                aria-label="Dashed full 360 degree trajectories"
+              >
+                <span className="sun-path-key">Sun · 360° path</span>
+                <span className="moon-path-key">Moon · 360° path</span>
+              </div>
               <p>
                 Swipe or drag across the full sphere. Pinch or scroll to zoom.
                 Moving the map pauses sensor tracking.

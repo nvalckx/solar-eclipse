@@ -2816,6 +2816,31 @@ h1 em {
   color: var(--muted);
   font: 10px/1.5 var(--mono);
 }
+.sky-trajectory-legend {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: #dce8f4;
+  font: 700 9px/1.4 var(--mono);
+  text-transform: uppercase;
+}
+.sky-trajectory-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.sky-trajectory-legend span::before {
+  content: "";
+  width: 23px;
+  border-top: 2px dashed currentColor;
+}
+.sky-trajectory-legend .sun-path-key {
+  color: #ffc194;
+}
+.sky-trajectory-legend .moon-path-key {
+  color: #bddcff;
+}
 .sky-guide-location button {
   min-height: 38px;
   margin-top: 11px;

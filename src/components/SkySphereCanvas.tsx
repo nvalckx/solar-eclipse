@@ -147,9 +147,11 @@ export function SkySphereCanvas({
       data-heading={Math.round(view.azimuthDeg)}
       data-altitude={Math.round(view.altitudeDeg)}
       data-fov={Math.round(view.fovDeg)}
+      data-sun-trajectory-points={scene.sunTrajectory.length}
+      data-moon-trajectory-points={scene.moonTrajectory.length}
       tabIndex={0}
       role="img"
-      aria-label={`Interactive all-sphere sky map. View ${describeDirection(view)}. Selected ${scene.targetLabel}: ${describeDirection(scene.target)}.`}
+      aria-label={`Interactive all-sphere sky map with full 360 degree dashed Sun and Moon trajectories. View ${describeDirection(view)}. Selected ${scene.targetLabel}: ${describeDirection(scene.target)}.`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={releasePointer}

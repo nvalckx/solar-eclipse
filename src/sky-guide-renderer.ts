@@ -97,7 +97,8 @@ function strokeDirections(
     const point = project(direction);
     const continuous =
       point.depth > 0 &&
-      previous?.depth &&
+      previous !== null &&
+      previous.depth > 0 &&
       Math.hypot(point.x - previous.x, point.y - previous.y) < 300;
     if (!continuous) {
       drawing = false;
@@ -271,20 +272,83 @@ function drawStars(
   }
 }
 
-function drawTrajectory(
+function drawTrajectoryLabel(
   context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  directions: SphericalDirection[],
+  project: (direction: SphericalDirection) => ScreenPoint,
+  label: string,
+  color: string,
+  offsetY: number,
+) {
+  const points = directions
+    .filter((_, index) => index % 8 === 0)
+    .map(project)
+    .filter(
+      (point) =>
+        point.visible &&
+        point.x > 48 &&
+        point.x < width - 48 &&
+        point.y > 92 &&
+        point.y < height - 92,
+    );
+  if (!points.length) return;
+  const point = points[Math.floor(points.length / 2)];
+  context.save();
+  context.fillStyle = color;
+  context.font = "700 9px ui-monospace, monospace";
+  context.textAlign = "center";
+  context.shadowColor = "rgba(2, 6, 12, .9)";
+  context.shadowBlur = 4;
+  context.fillText(label, point.x, point.y + offsetY);
+  context.restore();
+}
+
+function drawTrajectories(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
   scene: SkyGuideScene,
   project: (direction: SphericalDirection) => ScreenPoint,
 ) {
   strokeDirections(
     context,
-    scene.trajectory,
+    scene.moonTrajectory,
     project,
-    "rgba(255, 166, 104, .82)",
-    2,
-    [5, 5],
+    "rgba(189, 220, 255, .78)",
+    1.7,
+    [3, 7],
   );
-  for (const point of scene.trajectory.filter(
+  strokeDirections(
+    context,
+    scene.sunTrajectory,
+    project,
+    "rgba(255, 166, 104, .88)",
+    2,
+    [7, 6],
+  );
+  drawTrajectoryLabel(
+    context,
+    width,
+    height,
+    scene.moonTrajectory,
+    project,
+    "MOON · 360° PATH",
+    "rgba(210, 232, 255, .92)",
+    13,
+  );
+  drawTrajectoryLabel(
+    context,
+    width,
+    height,
+    scene.sunTrajectory,
+    project,
+    "SUN · 360° PATH",
+    "rgba(255, 193, 148, .96)",
+    -9,
+  );
+  for (const point of scene.sunTrajectory.filter(
     (item): item is SkyGuideTrajectoryPoint & { key: string; label: string } =>
       !!item.key && !!item.label,
   )) {
@@ -435,7 +499,7 @@ export function drawSkyGuideScene(
   }
   drawGrid(context, project);
   drawStars(context, scene, project);
-  drawTrajectory(context, scene, project);
+  drawTrajectories(context, width, height, scene, project);
   drawSunAndMoon(context, height, scene, view, project);
   drawOffscreenTarget(context, width, height, scene, view, project);
 
