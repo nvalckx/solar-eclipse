@@ -65,6 +65,7 @@ export function PhoneAlignmentDialog({
   const sensorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modeRef = useRef<GuideMode>("explore");
   const headingCorrectionRef = useRef(0);
+  const onCloseRef = useRef(onClose);
   const [sessionLocation, setSessionLocation] = useState(location);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const [locationMessage, setLocationMessage] = useState(
@@ -140,6 +141,10 @@ export function PhoneAlignmentDialog({
     headingCorrectionRef.current = headingCorrection;
   }, [headingCorrection]);
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   const stopCamera = () => {
     stopStream(streamRef.current);
     streamRef.current = null;
@@ -167,7 +172,7 @@ export function PhoneAlignmentDialog({
     dialog.showModal();
     const cancel = (event: Event) => {
       event.preventDefault();
-      onClose();
+      onCloseRef.current();
     };
     dialog.addEventListener("cancel", cancel);
     return () => {
@@ -176,7 +181,7 @@ export function PhoneAlignmentDialog({
       stopStream(streamRef.current);
       if (capturedUrlRef.current) URL.revokeObjectURL(capturedUrlRef.current);
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     const handleVisibility = () => {

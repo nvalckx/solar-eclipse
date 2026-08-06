@@ -285,6 +285,9 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
     page.getByText("Compass tracking", { exact: true }),
   ).toBeVisible();
   const sensorHeading = await canvas.getAttribute("data-heading");
+  // The live clock re-renders the parent once per second. Sensor listeners must
+  // survive that re-render even though the dialog callbacks get new identities.
+  await page.waitForTimeout(1_200);
   await page.evaluate(() => {
     for (let reading = 0; reading < 8; reading += 1) {
       const event = new Event("deviceorientationabsolute");
