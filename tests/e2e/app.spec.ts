@@ -134,9 +134,12 @@ test("shows the live clock, trajectory contacts, and integrated sky guide", asyn
     "data-sky-target-altitude",
     /-?\d+/,
   );
-  await expect(page.getByTestId("trajectory-sky-preview")).toHaveAttribute(
+  const snapshotStrip = page.getByTestId("trajectory-snapshot-strip");
+  await expect(snapshotStrip).toBeVisible();
+  await expect(snapshotStrip.locator(".trajectory-snapshot")).toHaveCount(7);
+  await expect(page.getByTestId("trajectory-snapshot-build_1")).toHaveAttribute(
     "aria-label",
-    /all-sphere sky-guide preview/i,
+    /eclipse building.+azimuth \d+ degrees .+, altitude -?\d+ degrees/i,
   );
   await expect(trajectoryCard).toContainText(/drag with a mouse or trackpad/i);
   await expect(page.getByTestId("live-event-c1")).toHaveAttribute(
@@ -144,10 +147,15 @@ test("shows the live clock, trajectory contacts, and integrated sky guide", asyn
     /azimuth \d+ degrees .+, altitude -?\d+ degrees/i,
   );
   await expect(page.getByTestId("live-event-c1")).toContainText(/° altitude/i);
+  await page.getByTestId("trajectory-snapshot-build_1").click();
+  const intermediateTime = await page
+    .getByTestId("eclipse-timeline")
+    .inputValue();
   await page.getByTestId("live-event-c1").click();
   const firstContactTime = await page
     .getByTestId("eclipse-timeline")
     .inputValue();
+  expect(firstContactTime).not.toBe(intermediateTime);
   await page.getByTestId("live-event-max").click();
   await expect(page.getByTestId("eclipse-timeline")).not.toHaveValue(
     firstContactTime,
@@ -269,7 +277,7 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
   ).toBeGreaterThanOrEqual(145);
   await expect(page.getByText("PHYSICAL OVERLAP DETAIL")).toBeVisible();
   await expect(
-    page.getByRole("img", {
+    page.getByTestId("phone-alignment-dialog").getByRole("img", {
       name: /center separation are magnified together, preserving the physical overlap/i,
     }),
   ).toBeVisible();

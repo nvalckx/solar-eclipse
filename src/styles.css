@@ -1773,12 +1773,95 @@ h1 em {
 .trajectory-wrap {
   min-width: 0;
 }
-.trajectory-sky-preview {
-  display: block;
-  width: 100%;
-  height: clamp(230px, 35vw, 330px);
+.trajectory-snapshot-heading {
+  padding: 10px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px 14px;
   border-top: 1px solid var(--line);
+  background: rgba(6, 18, 30, 0.94);
+  color: #eef3f8;
+  font: 700 10px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.trajectory-snapshot-heading small {
+  color: var(--quiet);
+  font: 9px var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.trajectory-snapshot-strip {
+  padding: 12px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(190px, 42%);
+  gap: 10px;
+  overflow-x: auto;
   background: #07101c;
+  scroll-snap-type: x proximity;
+  scrollbar-color: rgba(255, 173, 118, 0.45) rgba(255, 255, 255, 0.05);
+}
+.trajectory-snapshot {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  background: #081523;
+  color: #e7eef6;
+  text-align: left;
+  scroll-snap-align: start;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.trajectory-snapshot:hover {
+  border-color: rgba(255, 173, 118, 0.62);
+  transform: translateY(-2px);
+}
+.trajectory-snapshot:focus-visible {
+  outline: 2px solid var(--orange-bright);
+  outline-offset: 2px;
+}
+.trajectory-snapshot-visual {
+  position: relative;
+  height: 158px;
+  display: block;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+}
+.trajectory-snapshot-visual canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.trajectory-snapshot .trajectory-snapshot-visual .alignment-eclipse {
+  width: 98px;
+  max-width: none;
+  pointer-events: none;
+}
+.trajectory-snapshot-copy {
+  padding: 10px 11px 11px;
+  display: grid;
+  gap: 3px;
+}
+.trajectory-snapshot-copy strong {
+  overflow: hidden;
+  color: #fff0dc;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trajectory-snapshot-copy time,
+.trajectory-snapshot-copy small {
+  color: var(--muted);
+  font: 9px/1.35 var(--mono);
+}
+.trajectory-snapshot-copy small {
+  color: #b9c8d7;
 }
 .trajectory-preview-legend.sky-trajectory-legend {
   margin: 0;
