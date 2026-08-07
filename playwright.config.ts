@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "playwright/test";
 
+const localChromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const localChromiumLaunchOptions = localChromiumExecutable
+  ? { executablePath: localChromiumExecutable }
+  : undefined;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -18,10 +23,20 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: localChromiumLaunchOptions,
+      },
+    },
     {
       name: "mobile-chromium",
-      use: { ...devices["iPhone 13"], browserName: "chromium" },
+      use: {
+        ...devices["iPhone 13"],
+        browserName: "chromium",
+        launchOptions: localChromiumLaunchOptions,
+      },
     },
     {
       name: "firefox",

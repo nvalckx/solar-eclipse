@@ -28,10 +28,33 @@ import {
   serializeAlertPreferences,
   type AlertPreferences,
 } from "./notifications";
+import {
+  createShareCard,
+  shareCardFilename,
+  type ShareCardSnapshot,
+  type ShareCardModel,
+} from "./share-card";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 const GOLF_LOCATION_LABEL = "Pitch&Putt Molenhoek";
+
+type ShareAsset = {
+  file: File;
+  previewUrl: string;
+  downloadUrl: string;
+};
+
+function readBlobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("The share image could not be read.")),
+    );
+    reader.readAsDataURL(blob);
+  });
+}
 
 function readSavedLocation() {
   try {
@@ -93,6 +116,30 @@ function formatDuration(seconds: number | undefined) {
   return `${Math.floor(rounded / 60)}m ${String(rounded % 60).padStart(2, "0")}s`;
 }
 
+function timeAtCoverage(
+  startMs: number,
+  endMs: number,
+  targetPercent: number,
+  location: ObserverLocation,
+  eclipseWindow: ReturnType<typeof eclipseWindowFor>,
+  ascending: boolean,
+) {
+  let low = startMs;
+  let high = endMs;
+  for (let index = 0; index < 28; index += 1) {
+    const middle = (low + high) / 2;
+    const coverage = calculateSkyState(
+      new Date(middle),
+      location,
+      eclipseWindow,
+    ).eclipse.obscurationPercent;
+    if (ascending ? coverage < targetPercent : coverage > targetPercent)
+      low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
 export function App() {
   const initial = useMemo(() => {
     const fallback = readSavedLocation() ?? DEFAULT_CITY;
@@ -122,7 +169,11 @@ export function App() {
   const [showAlignment, setShowAlignment] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [alertPreferences, setAlertPreferences] = useState(readSavedAlerts);
-  const [shareFallback, setShareFallback] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareAsset, setShareAsset] = useState<ShareAsset | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareStatus, setShareStatus] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const pathReturnRef = useRef<{ nowMs: number; isPlaying: boolean } | null>(
     null,
@@ -133,6 +184,8 @@ export function App() {
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const alignmentReturnRef = useRef<HTMLElement | null>(null);
   const notificationReturnRef = useRef<HTMLButtonElement | null>(null);
+  const shareGenerationRef = useRef(0);
+  const sharePreviewUrlRef = useRef("");
 
   const eclipseWindow = useMemo(() => eclipseWindowFor(location), [location]);
   const timeRange = useMemo(
@@ -151,6 +204,60 @@ export function App() {
   const selectedTime = localDateTime(selectedDate, location.timezone, true);
   const zoneName = timezoneName(location.timezone, selectedDate);
   const peakTime = localDateTime(eclipseWindow.peak, location.timezone);
+  const shareSnapshots = useMemo<ShareCardSnapshot[]>(() => {
+    const start = eclipseWindow.start.getTime();
+    const peak = eclipseWindow.peak.getTime();
+    const end = eclipseWindow.end.getTime();
+    // Keep the build/fade frames comfortably away from maximum so the five
+    // thumbnails read as a progression at a glance.  A near-peak target made
+    // the second and fourth frames visually collapse into their neighbours.
+    const partialCoverage = eclipseWindow.peakObscuration * 100 * 0.45;
+    const points =
+      eclipseWindow.totalStart && eclipseWindow.totalEnd
+        ? [
+            { label: "C1", time: start },
+            { label: "C2", time: eclipseWindow.totalStart.getTime() },
+            { label: "MAX", time: peak, isPeak: true },
+            { label: "C3", time: eclipseWindow.totalEnd.getTime() },
+            { label: "C4", time: end },
+          ]
+        : [
+            { label: "C1", time: start },
+            {
+              label: "BUILD",
+              time: timeAtCoverage(
+                start,
+                peak,
+                partialCoverage,
+                location,
+                eclipseWindow,
+                true,
+              ),
+            },
+            { label: "MAX", time: peak, isPeak: true },
+            {
+              label: "FADE",
+              time: timeAtCoverage(
+                peak,
+                end,
+                partialCoverage,
+                location,
+                eclipseWindow,
+                false,
+              ),
+            },
+            { label: "C4", time: end },
+          ];
+    return points.map((point) => {
+      const date = new Date(point.time);
+      return {
+        label: point.label,
+        time: localDateTime(date, location.timezone),
+        state: calculateSkyState(date, location, eclipseWindow),
+        isPeak: point.isPeak,
+      };
+    });
+  }, [eclipseWindow, location]);
   const isTotalLocation =
     !!eclipseWindow.totalStart && !!eclipseWindow.totalEnd;
   const description = `${mode === "sky" ? "Sky view" : "Magnified close-up"}. ${eventLabel(state)}. Sun altitude ${Math.round(state.sun.altitudeDeg)} degrees, azimuth ${Math.round(state.sun.azimuthDeg)} degrees.`;
@@ -205,6 +312,14 @@ export function App() {
       // Alerts still work for this visit if storage is unavailable.
     }
   }, [alertPreferences]);
+
+  useEffect(
+    () => () => {
+      if (sharePreviewUrlRef.current)
+        URL.revokeObjectURL(sharePreviewUrlRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (
@@ -330,33 +445,142 @@ export function App() {
     );
   };
 
-  const handleShare = async () => {
+  const closeShare = () => {
+    shareGenerationRef.current += 1;
+    if (sharePreviewUrlRef.current) {
+      URL.revokeObjectURL(sharePreviewUrlRef.current);
+      sharePreviewUrlRef.current = "";
+    }
+    setShareUrl("");
+    setShareAsset(null);
+    setShareLoading(false);
+    setShareError("");
+    setShareStatus("");
+    requestAnimationFrame(() => shareButtonRef.current?.focus());
+  };
+
+  const handleShare = () => {
     const url = buildShareUrl(
       window.location.href,
       location,
       selectedDate,
       mode,
     );
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Eclipse/26 view",
-          text: `See the 2026 eclipse from ${location.label}`,
-          url,
-        });
-        setAnnouncement("Eclipse view shared.");
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-      }
+    const model: ShareCardModel = {
+      state,
+      eclipseWindow,
+      mode,
+      snapshots: shareSnapshots,
+      locationLabel: location.label,
+      selectedDate,
+      selectedTime,
+      zoneName,
+      eventLabel: eventLabel(state),
+      peakTime,
+      totalityDurationLabel: formatDuration(
+        eclipseWindow.totalityDurationSeconds,
+      ),
+    };
+    const generation = shareGenerationRef.current + 1;
+    shareGenerationRef.current = generation;
+    if (sharePreviewUrlRef.current) {
+      URL.revokeObjectURL(sharePreviewUrlRef.current);
+      sharePreviewUrlRef.current = "";
     }
+    setShareUrl(url);
+    setShareAsset(null);
+    setShareLoading(true);
+    setShareError("");
+    setShareStatus("");
+
+    void createShareCard(model)
+      .then(async (blob) => {
+        if (shareGenerationRef.current !== generation) return;
+        const file = new File([blob], shareCardFilename(model), {
+          type: "image/png",
+        });
+        const previewUrl = await readBlobAsDataUrl(file);
+        if (shareGenerationRef.current !== generation) return;
+        const downloadUrl = URL.createObjectURL(file);
+        sharePreviewUrlRef.current = downloadUrl;
+        setShareAsset({ file, previewUrl, downloadUrl });
+        setShareLoading(false);
+      })
+      .catch(() => {
+        if (shareGenerationRef.current !== generation) return;
+        setShareLoading(false);
+        setShareError("The personalized image could not be created.");
+      });
+  };
+
+  const copyShareLink = async () => {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(shareUrl);
+      setShareStatus("Exact view link copied.");
       setAnnouncement("View link copied to the clipboard.");
     } catch {
-      setShareFallback(url);
+      setShareStatus(
+        "Clipboard access was denied. Select the link to copy it.",
+      );
     }
+  };
+
+  const canShareImage = (() => {
+    if (!shareAsset || typeof navigator.canShare !== "function") return false;
+    try {
+      return navigator.canShare({ files: [shareAsset.file] });
+    } catch {
+      return false;
+    }
+  })();
+  const hasNativeShare = typeof navigator.share === "function";
+  const canCopyImage =
+    !!shareAsset &&
+    typeof ClipboardItem !== "undefined" &&
+    typeof navigator.clipboard?.write === "function";
+
+  const shareCurrentView = async () => {
+    if (!hasNativeShare) return copyShareLink();
+    const covered = Math.round(state.eclipse.obscurationPercent);
+    const text = `${location.label}: ${covered}% of the Sun covered at ${selectedTime}. Open the interactive view.`;
+    try {
+      await navigator.share({
+        title: `Eclipse/26 · ${location.label}`,
+        text,
+        url: shareUrl,
+        ...(canShareImage && shareAsset ? { files: [shareAsset.file] } : {}),
+      });
+      setAnnouncement("Eclipse view shared.");
+      closeShare();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareStatus(
+        "Sharing was unavailable. Copy the link or download the image instead.",
+      );
+    }
+  };
+
+  const copyShareImage = async () => {
+    if (!shareAsset || !canCopyImage) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": shareAsset.file }),
+      ]);
+      setShareStatus("Personalized image copied.");
+      setAnnouncement("Eclipse image copied to the clipboard.");
+    } catch {
+      setShareStatus("Image clipboard access was denied. Download it instead.");
+    }
+  };
+
+  const downloadShareImage = () => {
+    if (!shareAsset) return;
+    const link = document.createElement("a");
+    link.href = shareAsset.downloadUrl;
+    link.download = shareAsset.file.name;
+    link.click();
+    setShareStatus("Personalized image downloaded.");
+    setAnnouncement("Eclipse image downloaded.");
   };
 
   return (
@@ -757,13 +981,30 @@ export function App() {
           }}
         />
       )}
-      {shareFallback && (
+      {shareUrl && (
         <ShareDialog
-          url={shareFallback}
-          onClose={() => {
-            setShareFallback("");
-            requestAnimationFrame(() => shareButtonRef.current?.focus());
-          }}
+          url={shareUrl}
+          previewUrl={shareAsset?.previewUrl ?? ""}
+          previewAlt={`Personalized Eclipse/26 card for ${location.label}: ${eventLabel(state)}, ${selectedTime} ${zoneName}.`}
+          isLoading={shareLoading}
+          error={shareError}
+          status={shareStatus}
+          nativeShareLabel={
+            hasNativeShare
+              ? shareLoading
+                ? "Preparing image…"
+                : canShareImage
+                  ? "Share image + link"
+                  : "Share link"
+              : undefined
+          }
+          shareDisabled={hasNativeShare && shareLoading}
+          canCopyImage={canCopyImage}
+          onShare={shareCurrentView}
+          onCopyLink={copyShareLink}
+          onCopyImage={copyShareImage}
+          onDownload={downloadShareImage}
+          onClose={closeShare}
         />
       )}
     </div>

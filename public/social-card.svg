@@ -1,10 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <defs>
-    <radialGradient id="bg" cx="78%" cy="12%" r="90%"><stop stop-color="#244d68"/><stop offset=".45" stop-color="#0a1a2a"/><stop offset="1" stop-color="#050c15"/></radialGradient>
-    <radialGradient id="corona"><stop offset=".35" stop-color="#fff4d7" stop-opacity=".95"/><stop offset=".58" stop-color="#ffb677" stop-opacity=".25"/><stop offset="1" stop-color="#ff9366" stop-opacity="0"/></radialGradient>
+    <radialGradient id="bg" cx="82%" cy="0" r="105%"><stop stop-color="#244d68"/><stop offset=".45" stop-color="#0a1b2b"/><stop offset="1" stop-color="#040b13"/></radialGradient>
+    <radialGradient id="glow"><stop stop-color="#fff4d7" stop-opacity=".95"/><stop offset=".5" stop-color="#ffbd7e" stop-opacity=".28"/><stop offset="1" stop-color="#ff9366" stop-opacity="0"/></radialGradient>
+    <linearGradient id="cta"><stop stop-color="#ff9366"/><stop offset="1" stop-color="#ffc08c"/></linearGradient>
+    <clipPath id="c1"><circle cx="150" cy="338" r="68"/></clipPath>
+    <clipPath id="c2"><circle cx="375" cy="315" r="83"/></clipPath>
+    <clipPath id="c3"><circle cx="600" cy="286" r="105"/></clipPath>
+    <clipPath id="c4"><circle cx="825" cy="315" r="83"/></clipPath>
+    <clipPath id="c5"><circle cx="1050" cy="338" r="68"/></clipPath>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <g transform="translate(825 286)"><circle r="188" fill="url(#corona)"/><circle r="91" fill="#ffd174"/><circle cx="-3" cy="1" r="95" fill="#030912"/><circle r="98" fill="none" stroke="#fff0c8" stroke-opacity=".65" stroke-width="2"/></g>
-  <g fill="#f3f7fc" font-family="Arial, sans-serif"><text x="78" y="92" font-size="26" font-weight="700" letter-spacing="6">◐  ECLIPSE / 26</text><text x="78" y="245" font-size="76" font-weight="700">See the</text><text x="78" y="326" font-size="76" font-weight="700" fill="#ffad7d">shadow</text><text x="78" y="407" font-size="76" font-weight="700">arrive.</text><text x="80" y="495" font-size="25" fill="#bdcad8">12 August 2026 · Your place · Your sky</text></g>
-  <rect x="78" y="548" width="335" height="3" rx="2" fill="#ff9366"/>
+  <circle cx="1010" cy="25" r="300" fill="#ff9366" opacity=".06"/>
+  <g font-family="Arial, sans-serif">
+    <g transform="translate(48 31)"><circle cx="9" cy="14" r="9" fill="#ff9366"/><circle cx="14" cy="14" r="8" fill="#06101c"/><text x="31" y="20" fill="#f2f6fc" font-size="17" font-weight="700" letter-spacing="2">ECLIPSE</text><text x="127" y="20" fill="#ff9366" font-size="17" font-weight="700">/</text><text x="142" y="20" fill="#f2f6fc" font-size="17" font-weight="700">26</text></g>
+    <text x="1152" y="51" fill="#9fb0c2" font-family="monospace" font-size="12" font-weight="700" text-anchor="end" letter-spacing="1">12 AUGUST 2026</text>
+    <text x="48" y="106" fill="#ffb486" font-family="monospace" font-size="11" font-weight="700" letter-spacing="1">YOUR PLACE · YOUR TIME · YOUR SKY</text>
+    <text x="48" y="151" fill="#f5f8fc" font-size="39" font-weight="700">See the shadow move.</text>
+    <text x="48" y="180" fill="#b8c7d7" font-size="17">Five moments. One unforgettable sky.</text>
+  </g>
+
+  <path d="M150 338 C300 325 440 300 600 286 S900 325 1050 338" fill="none" stroke="#ff9366" stroke-opacity=".48" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#ff9366"><circle cx="150" cy="338" r="4"/><circle cx="375" cy="315" r="4"/><circle cx="600" cy="286" r="5"/><circle cx="825" cy="315" r="4"/><circle cx="1050" cy="338" r="4"/></g>
+
+  <g>
+    <g clip-path="url(#c1)"><rect x="82" y="270" width="136" height="136" fill="#17334a"/><circle cx="150" cy="338" r="60" fill="url(#glow)"/><circle cx="150" cy="338" r="20" fill="#ffd174"/><circle cx="163" cy="338" r="20" fill="#02050b"/></g><circle cx="150" cy="338" r="68" fill="none" stroke="#fff0cd" stroke-opacity=".76" stroke-width="2"/>
+    <g clip-path="url(#c2)"><rect x="292" y="232" width="166" height="166" fill="#16334a"/><circle cx="375" cy="315" r="76" fill="url(#glow)"/><circle cx="375" cy="315" r="26" fill="#ffd174"/><circle cx="390" cy="315" r="27" fill="#02050b"/></g><circle cx="375" cy="315" r="83" fill="none" stroke="#fff0cd" stroke-opacity=".76" stroke-width="2"/>
+    <g clip-path="url(#c3)"><rect x="495" y="181" width="210" height="210" fill="#152d42"/><circle cx="600" cy="286" r="100" fill="url(#glow)"/><circle cx="600" cy="286" r="39" fill="#ffd174"/><circle cx="600" cy="286" r="42" fill="#02050b"/><circle cx="600" cy="286" r="45" fill="none" stroke="#fff0c8" stroke-opacity=".84" stroke-width="2"/></g><circle cx="600" cy="286" r="105" fill="none" stroke="#ffb486" stroke-width="4"/>
+    <g clip-path="url(#c4)"><rect x="742" y="232" width="166" height="166" fill="#16334a"/><circle cx="825" cy="315" r="76" fill="url(#glow)"/><circle cx="825" cy="315" r="26" fill="#ffd174"/><circle cx="810" cy="315" r="27" fill="#02050b"/></g><circle cx="825" cy="315" r="83" fill="none" stroke="#fff0cd" stroke-opacity=".76" stroke-width="2"/>
+    <g clip-path="url(#c5)"><rect x="982" y="270" width="136" height="136" fill="#17334a"/><circle cx="1050" cy="338" r="60" fill="url(#glow)"/><circle cx="1050" cy="338" r="20" fill="#ffd174"/><circle cx="1037" cy="338" r="20" fill="#02050b"/></g><circle cx="1050" cy="338" r="68" fill="none" stroke="#fff0cd" stroke-opacity=".76" stroke-width="2"/>
+  </g>
+  <g fill="#bdcad8" font-family="monospace" font-size="11" font-weight="700" text-anchor="middle"><text x="150" y="430">C1</text><text x="375" y="418">BUILD</text><text x="600" y="416" fill="#ffb486">MAX</text><text x="825" y="418">FADE</text><text x="1050" y="430">C4</text></g>
+  <g fill="#8295aa" font-family="monospace" font-size="11" font-weight="700" text-anchor="middle"><text x="150" y="448">FIRST LIGHT</text><text x="375" y="436">CRESCENT</text><text x="600" y="434" fill="#f5f8fc">TOTALITY</text><text x="825" y="436">CRESCENT</text><text x="1050" y="448">LAST LIGHT</text></g>
+
+  <rect x="36" y="548" width="1128" height="54" rx="15" fill="url(#cta)"/>
+  <text x="60" y="582" fill="#07101c" font-family="Arial, sans-serif" font-size="16" font-weight="700">Open the interactive eclipse view</text>
+  <text x="1138" y="583" fill="#07101c" font-family="monospace" font-size="17" font-weight="700" text-anchor="end">EXPLORE YOUR SKY  →</text>
 </svg>

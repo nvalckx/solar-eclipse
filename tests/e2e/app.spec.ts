@@ -574,7 +574,9 @@ test("opens the verified path dialog and restores focus", async ({ page }) => {
   await expect(page.getByTestId("eclipse-timeline")).toHaveValue(previousTime);
 });
 
-test("copies a versioned share URL", async ({ page }) => {
+test("previews a personalized card and copies a versioned share URL", async ({
+  page,
+}) => {
   await page.evaluate(() => {
     Object.defineProperty(navigator, "share", {
       configurable: true,
@@ -590,14 +592,28 @@ test("copies a versioned share URL", async ({ page }) => {
     });
   });
   await page.getByTestId("share-view").click();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await expect(dialog).toBeVisible();
+  const preview = page.getByTestId("share-preview").locator("img");
+  await expect(preview).toBeVisible();
+  await expect
+    .poll(() =>
+      preview.evaluate((image: HTMLImageElement) => ({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      })),
+    )
+    .toEqual({ width: 1200, height: 630 });
+  await dialog.getByRole("button", { name: "Copy link" }).click();
   const sharedUrl = await page.evaluate(
     () => (window as Window & { sharedUrl?: string }).sharedUrl,
   );
   expect(sharedUrl).toContain("v=1");
   expect(sharedUrl).toContain("mode=sky");
+  await expect(dialog.getByRole("status")).toContainText(/link copied/i);
 });
 
-test("offers a selectable share fallback when clipboard access fails", async ({
+test("keeps the exact link selectable when clipboard access fails", async ({
   page,
 }) => {
   await page.evaluate(() => {
@@ -611,12 +627,194 @@ test("offers a selectable share fallback when clipboard access fails", async ({
     });
   });
   await page.getByTestId("share-view").click();
-  await expect(
-    page.getByRole("dialog", { name: /copy your eclipse view/i }),
-  ).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy link" }).click();
+  await expect(dialog.getByRole("status")).toContainText(/select the link/i);
   await expect(page.getByLabel("Share link")).toHaveValue(/v=1/);
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByTestId("share-view")).toBeFocused();
+});
+
+test("shares the personalized PNG together with the exact deep link", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: (data: ShareData) => Boolean(data.files?.length),
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        const file = data.files?.[0];
+        (
+          window as Window & {
+            sharedPayload?: Record<string, string | number>;
+          }
+        ).sharedPayload = {
+          title: data.title ?? "",
+          text: data.text ?? "",
+          url: data.url ?? "",
+          fileName: file?.name ?? "",
+          fileType: file?.type ?? "",
+          fileSize: file?.size ?? 0,
+        };
+      },
+    });
+  });
+
+  await page.getByTestId("share-view").click();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await expect(
+    dialog.getByRole("button", { name: "Share image + link" }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Share image + link" }).click();
+  await expect(dialog).not.toBeVisible();
+
+  const payload = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          sharedPayload?: Record<string, string | number>;
+        }
+      ).sharedPayload,
+  );
+  expect(payload?.url).toContain("v=1");
+  expect(payload?.fileName).toMatch(
+    /^eclipse-26-amsterdam-netherlands-.+\.png$/,
+  );
+  expect(payload?.fileType).toBe("image/png");
+  expect(Number(payload?.fileSize)).toBeGreaterThan(10_000);
+  expect(String(payload?.text)).toContain("Amsterdam, Netherlands");
+});
+
+test("falls back to link sharing and handles a cancelled share", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: () => false,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        (window as Window & { sharedFiles?: number }).sharedFiles =
+          data.files?.length ?? 0;
+        throw new DOMException("cancelled", "AbortError");
+      },
+    });
+  });
+
+  await page.getByTestId("share-view").click();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await expect(
+    dialog.getByRole("button", { name: "Share link" }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Share link" }).click();
+  await expect(dialog).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { sharedFiles?: number }).sharedFiles,
+    ),
+  ).toBe(0);
+  await expect(dialog.getByRole("status")).toHaveCount(0);
+});
+
+test("copies and downloads the generated image", async ({ page }) => {
+  await page.evaluate(() => {
+    class MockClipboardItem {
+      constructor(public items: Record<string, Blob>) {}
+    }
+    Object.defineProperty(window, "ClipboardItem", {
+      configurable: true,
+      value: MockClipboardItem,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => undefined,
+        write: async (items: MockClipboardItem[]) => {
+          const blob = items[0]?.items["image/png"];
+          (window as Window & { copiedImageSize?: number }).copiedImageSize =
+            blob?.size ?? 0;
+        },
+      },
+    });
+  });
+
+  await page.getByTestId("share-view").click();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await dialog.getByRole("button", { name: "Copy image" }).click();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { copiedImageSize?: number }).copiedImageSize,
+    ),
+  ).toBeGreaterThan(10_000);
+  const downloadPromise = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Download image" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^eclipse-26-.+\.png$/);
+});
+
+test("retains link sharing when image generation fails", async ({ page }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: undefined,
+    });
+    HTMLCanvasElement.prototype.toBlob = function (callback) {
+      callback(null);
+    };
+  });
+  await page.getByTestId("share-view").click();
+  const dialog = page.getByRole("dialog", { name: /share your eclipse view/i });
+  await expect(dialog.getByRole("alert")).toContainText(
+    /could not be created/i,
+  );
+  await expect(dialog.getByRole("button", { name: "Copy link" })).toBeEnabled();
+  await expect(
+    dialog.getByRole("button", { name: "Download image" }),
+  ).toBeDisabled();
+});
+
+test("renders polished total and partial share-card variants", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Share-card visual baselines use the desktop viewport.");
+
+  const captureCard = async (name: string) => {
+    await page.getByTestId("share-view").click();
+    const dialog = page.getByRole("dialog", {
+      name: /share your eclipse view/i,
+    });
+    const preview = page.getByTestId("share-preview").locator("img");
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveScreenshot(name, { maxDiffPixelRatio: 0.03 });
+    await expect(dialog).not.toContainText(/41\.65|-0\.89|52\.37|4\.90/);
+    await dialog.getByRole("button", { name: "Done" }).click();
+  };
+
+  await page.goto(
+    "./?v=1&lat=41.65&lon=-0.89&elev=250&tz=Europe%2FMadrid&time=2026-08-12T18%3A29%3A36Z&label=Zaragoza%2C%20Spain&mode=sky",
+  );
+  await expect(page.getByTestId("location-picker")).toContainText("Zaragoza");
+  await captureCard("share-card-totality-sky.png");
+  await page.getByTestId("mode-closeup").click();
+  await captureCard("share-card-totality-closeup.png");
+
+  await page.evaluate(() => localStorage.clear());
+  await page.goto("./");
+  await expect(page.getByTestId("location-picker")).toContainText("Amsterdam");
+  await captureCard("share-card-partial-sky.png");
+  await page.getByTestId("mode-closeup").click();
+  await captureCard("share-card-partial-closeup.png");
 });
 
 test("handles geolocation success and unsupported browsers", async ({
