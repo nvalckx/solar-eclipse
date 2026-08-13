@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   LAND_PATH,
   interpolateCoordinate,
+  nearestPointOnPath,
   PATH_END_MS,
   PATH_START_MS,
   pathShadowAt,
@@ -67,5 +68,31 @@ describe("animated eclipse path geometry", () => {
     const midpoint = interpolateCoordinate([179, 0], [-179, 0], 0.5);
     expect(Math.abs(midpoint[0])).toBe(180);
     expect(midpoint[1]).toBe(0);
+  });
+
+  test("finds the closest sampled centerline point", () => {
+    const nearest = nearestPointOnPath(
+      [5, 2],
+      [
+        [0, 0],
+        [10, 0],
+      ],
+    );
+    expect(nearest?.coordinate[0]).toBeCloseTo(5, 4);
+    expect(nearest?.coordinate[1]).toBeCloseTo(0, 4);
+    expect(nearest?.distanceKm).toBeCloseTo(222.4, 0);
+    expect(nearest?.progress).toBeCloseTo(0.5, 4);
+  });
+
+  test("finds nearest path points across the antimeridian", () => {
+    const nearest = nearestPointOnPath(
+      [180, 1],
+      [
+        [179, 0],
+        [-179, 0],
+      ],
+    );
+    expect(Math.abs(nearest?.coordinate[0] ?? 0)).toBeCloseTo(180, 4);
+    expect(nearest?.distanceKm).toBeCloseTo(111.2, 0);
   });
 });

@@ -22,19 +22,23 @@ export function eclipseEvents(window: EclipseWindow): EclipseEvent[] {
   const events: EclipseEvent[] = [
     { key: "C1", label: "Partial eclipse begins", time: window.start },
   ];
-  if (window.totalStart) {
+  if (window.centralStart) {
     events.push({
       key: "C2",
-      label: "Totality begins",
-      time: window.totalStart,
+      label:
+        window.localType === "annular"
+          ? "Annularity begins"
+          : "Totality begins",
+      time: window.centralStart,
     });
   }
   events.push({ key: "MAX", label: "Maximum eclipse", time: window.peak });
-  if (window.totalEnd) {
+  if (window.centralEnd) {
     events.push({
       key: "C3",
-      label: "Totality ends",
-      time: window.totalEnd,
+      label:
+        window.localType === "annular" ? "Annularity ends" : "Totality ends",
+      time: window.centralEnd,
     });
   }
   events.push({ key: "C4", label: "Partial eclipse ends", time: window.end });
@@ -62,15 +66,20 @@ export function liveSituation(now: Date, window: EclipseWindow): LiveSituation {
     };
   }
   if (
-    window.totalStart &&
-    window.totalEnd &&
-    time >= window.totalStart.getTime() &&
-    time <= window.totalEnd.getTime()
+    window.centralStart &&
+    window.centralEnd &&
+    time >= window.centralStart.getTime() &&
+    time <= window.centralEnd.getTime()
   ) {
+    const annular = window.localType === "annular";
     return {
       phase: "total",
-      title: "Totality is happening now",
-      detail: "The bright photosphere is fully covered at this location.",
+      title: annular
+        ? "Annularity is happening now"
+        : "Totality is happening now",
+      detail: annular
+        ? "The Sun remains visible as a bright ring. Keep certified eclipse protection on."
+        : "The bright photosphere is fully covered at this location.",
       nextEvent,
     };
   }

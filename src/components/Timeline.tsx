@@ -30,10 +30,10 @@ export function Timeline({
   const position = (date: Date) =>
     clamp((date.getTime() - start) / (end - start), 0, 1) * 100;
   const progress = clamp((nowMs - start) / (end - start), 0, 1) * 100;
-  const totalityLeft = window.totalStart ? position(window.totalStart) : 0;
-  const totalityWidth =
-    window.totalStart && window.totalEnd
-      ? position(window.totalEnd) - totalityLeft
+  const centralLeft = window.centralStart ? position(window.centralStart) : 0;
+  const centralWidth =
+    window.centralStart && window.centralEnd
+      ? position(window.centralEnd) - centralLeft
       : 0;
 
   return (
@@ -43,13 +43,13 @@ export function Timeline({
           className="timeline-progress"
           style={{ "--progress": `${progress}%` } as CSSProperties}
         />
-        {window.totalStart && (
+        {window.centralStart && (
           <span
             className="totality-range"
             style={
               {
-                "--left": `${totalityLeft}%`,
-                "--width": `${totalityWidth}%`,
+                "--left": `${centralLeft}%`,
+                "--width": `${centralWidth}%`,
               } as CSSProperties
             }
           />
@@ -77,10 +77,10 @@ export function Timeline({
           <small>C1</small>
           {formatTime(window.start)}
         </button>
-        {window.totalStart && (
-          <button onClick={() => onTimeChange(window.totalStart!.getTime())}>
+        {window.centralStart && (
+          <button onClick={() => onTimeChange(window.centralStart!.getTime())}>
             <small>C2</small>
-            {formatTime(window.totalStart)}
+            {formatTime(window.centralStart)}
           </button>
         )}
         <button
@@ -90,10 +90,10 @@ export function Timeline({
           <small>Maximum</small>
           {formatTime(window.peak)}
         </button>
-        {window.totalEnd && (
-          <button onClick={() => onTimeChange(window.totalEnd!.getTime())}>
+        {window.centralEnd && (
+          <button onClick={() => onTimeChange(window.centralEnd!.getTime())}>
             <small>C3</small>
-            {formatTime(window.totalEnd)}
+            {formatTime(window.centralEnd)}
           </button>
         )}
         <button onClick={() => onTimeChange(window.end.getTime())}>
@@ -123,9 +123,14 @@ export function Timeline({
             </button>
           ))}
         </div>
-        {window.totalityDurationSeconds && (
+        {window.centralStart && window.centralEnd && (
           <span className="totality-duration">
-            Totality {Math.round(window.totalityDurationSeconds)} sec
+            {window.localType === "annular" ? "Annularity" : "Totality"}{" "}
+            {Math.round(
+              (window.centralEnd.getTime() - window.centralStart.getTime()) /
+                1000,
+            )}{" "}
+            sec
           </span>
         )}
       </div>

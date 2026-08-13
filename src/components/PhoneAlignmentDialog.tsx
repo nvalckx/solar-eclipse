@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { captureAlignmentPhoto } from "../alignment-photo";
-import { calculateSkyState, eclipseWindowFor } from "../eclipse-logic";
+import {
+  calculateSkyState,
+  eclipseWindowFor,
+  localEclipseFor,
+} from "../eclipse-logic";
 import {
   eclipseEvents,
   formatCountdown,
@@ -26,7 +30,7 @@ import {
   type SkyViewState,
 } from "../sky-guide";
 import { createSkyGuideScene } from "../sky-guide-scene";
-import type { ObserverLocation } from "../types";
+import type { EclipseWindow, ObserverLocation } from "../types";
 import { EclipseDiskOverlay } from "./EclipseDiskOverlay";
 import { SkySphereCanvas } from "./SkySphereCanvas";
 
@@ -39,6 +43,7 @@ type CapturedPhoto = {
 
 type Props = {
   location: ObserverLocation;
+  eclipseWindow: EclipseWindow;
   now: Date;
   formatTime: (date: Date, full?: boolean) => string;
   onLocationChange: (location: ObserverLocation) => void;
@@ -56,6 +61,7 @@ function stopStream(stream: MediaStream | null) {
 
 export function PhoneAlignmentDialog({
   location,
+  eclipseWindow,
   now,
   formatTime,
   onLocationChange,
@@ -100,8 +106,8 @@ export function PhoneAlignmentDialog({
   const [photoMessage, setPhotoMessage] = useState("");
 
   const window = useMemo(
-    () => eclipseWindowFor(sessionLocation),
-    [sessionLocation],
+    () => eclipseWindowFor(sessionLocation, eclipseWindow.eventId),
+    [eclipseWindow.eventId, sessionLocation],
   );
   const events = useMemo(() => eclipseEvents(window), [window]);
   const selected =
@@ -145,8 +151,7 @@ export function PhoneAlignmentDialog({
     [events, sessionLocation, targetLabel, targetTime, window],
   );
   const [view, setView] = useState<SkyViewState>(() => {
-    const initialWindow = eclipseWindowFor(location);
-    const initial = calculateSkyState(now, location, initialWindow);
+    const initial = calculateSkyState(now, location, eclipseWindow);
     return {
       azimuthDeg: initial.sun.azimuthDeg,
       altitudeDeg: initial.sun.altitudeDeg,
@@ -277,6 +282,14 @@ export function PhoneAlignmentDialog({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
           source: "geolocation",
         };
+        const nextResult = localEclipseFor(eclipseWindow.eventId, next);
+        if (!nextResult.visible) {
+          setLocationMessage(
+            `The ${eclipseWindow.eventId} eclipse is not visible from this device location; keeping ${sessionLocation.label}.`,
+          );
+          setLocating(false);
+          return;
+        }
         setSessionLocation(next);
         setLocationAccuracy(position.coords.accuracy);
         setLocationMessage(
@@ -284,7 +297,7 @@ export function PhoneAlignmentDialog({
         );
         setLocating(false);
         onLocationChange(next);
-        const nextWindow = eclipseWindowFor(next);
+        const nextWindow = nextResult.window;
         const nextTarget = calculateSkyState(targetTime, next, nextWindow).sun;
         setView((current) => ({
           ...current,
@@ -480,6 +493,7 @@ export function PhoneAlignmentDialog({
         {
           includeOverlay: includePhotoOverlay,
           showEclipse: true,
+          brandLabel: `ECLIPSE COMPANION · ${eclipseWindow.eventId}`,
           eventLabel: targetLabel,
           eventTime: formatTime(targetTime, true),
           directionLabel: describeDirection(scene.target),
@@ -494,7 +508,7 @@ export function PhoneAlignmentDialog({
         blob,
         url,
         includeOverlay: includePhotoOverlay,
-        filename: `eclipse-26-${targetTime.toISOString().replace(/[:.]/g, "-")}-${suffix}.jpg`,
+        filename: `eclipse-${eclipseWindow.eventId}-${targetTime.toISOString().replace(/[:.]/g, "-")}-${suffix}.jpg`,
       });
       setPhotoMessage("Photo ready.");
     } catch (error) {
@@ -515,8 +529,8 @@ export function PhoneAlignmentDialog({
         return;
       }
       await navigator.share({
-        title: "Eclipse/26 sky preview",
-        text: "My Eclipse/26 all-sky preview",
+        title: `Eclipse Companion · ${eclipseWindow.eventId}`,
+        text: `My ${eclipseWindow.eventId} all-sky eclipse preview`,
         files: [file],
       });
       setPhotoMessage("Photo shared.");

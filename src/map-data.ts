@@ -362,7 +362,7 @@ export const PATH_END_MS =
 const EARTH_RADIUS_KM = 6371;
 const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
 
-const distanceKm = (a: Coordinate, b: Coordinate) => {
+export const distanceKm = (a: Coordinate, b: Coordinate) => {
   const latitudeA = toRadians(a[1]);
   const latitudeB = toRadians(b[1]);
   const deltaLatitude = latitudeB - latitudeA;
@@ -381,12 +381,83 @@ export const interpolateCoordinate = (
   to: Coordinate,
   progress: number,
 ): Coordinate => {
+  if (progress <= 0) return from;
+  if (progress >= 1) return to;
   const longitudeDelta = ((to[0] - from[0] + 540) % 360) - 180;
+  const longitude = from[0] + longitudeDelta * progress;
   return [
-    from[0] + longitudeDelta * progress,
+    ((longitude + 540) % 360) - 180,
     from[1] + (to[1] - from[1]) * progress,
   ];
 };
+
+export type NearestPathPoint = {
+  coordinate: Coordinate;
+  distanceKm: number;
+  segmentIndex: number;
+  progress: number;
+};
+
+/**
+ * Finds the closest point on a sampled path using a local tangent plane,
+ * then measures the result with the antimeridian-safe haversine distance.
+ * Eclipse path samples are short enough for this projection to be stable.
+ */
+export function nearestPointOnPath(
+  location: Coordinate,
+  path: ReadonlyArray<Coordinate>,
+): NearestPathPoint | undefined {
+  if (path.length === 0) return undefined;
+  if (path.length === 1) {
+    return {
+      coordinate: path[0],
+      distanceKm: distanceKm(location, path[0]),
+      segmentIndex: 0,
+      progress: 0,
+    };
+  }
+
+  const latitudeScale = EARTH_RADIUS_KM * (Math.PI / 180);
+  const longitudeScale =
+    latitudeScale * Math.max(1e-6, Math.cos(toRadians(location[1])));
+  const projectLocal = (coordinate: Coordinate) => {
+    const longitudeDelta = ((coordinate[0] - location[0] + 540) % 360) - 180;
+    return [
+      longitudeDelta * longitudeScale,
+      (coordinate[1] - location[1]) * latitudeScale,
+    ] as const;
+  };
+
+  let nearest: NearestPathPoint | undefined;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const from = projectLocal(path[index]);
+    const to = projectLocal(path[index + 1]);
+    const deltaX = to[0] - from[0];
+    const deltaY = to[1] - from[1];
+    const squaredLength = deltaX ** 2 + deltaY ** 2;
+    const progress = squaredLength
+      ? Math.min(
+          1,
+          Math.max(0, -(from[0] * deltaX + from[1] * deltaY) / squaredLength),
+        )
+      : 0;
+    const coordinate = interpolateCoordinate(
+      path[index],
+      path[index + 1],
+      progress,
+    );
+    const distance = distanceKm(location, coordinate);
+    if (!nearest || distance < nearest.distanceKm) {
+      nearest = {
+        coordinate,
+        distanceKm: distance,
+        segmentIndex: index,
+        progress,
+      };
+    }
+  }
+  return nearest;
+}
 
 export function pathShadowAt(timestampMs: number): PathShadowState {
   const clamped = Math.min(PATH_END_MS, Math.max(PATH_START_MS, timestampMs));

@@ -6,7 +6,11 @@ import {
   TOTALITY_CENTERLINE,
 } from "../map-data";
 import type { Coordinate } from "../map-data";
-import type { ObserverLocation } from "../types";
+import type {
+  EclipsePathData,
+  EclipseRecord,
+  ObserverLocation,
+} from "../types";
 
 const WIDTH = 900;
 const HEIGHT = 440;
@@ -22,11 +26,16 @@ const project = ([longitude, latitude]: Coordinate) =>
     ((90 - latitude) / 180) * HEIGHT,
   ] as const;
 
-const pathFromCoordinates = (coordinates: Coordinate[], close = false) =>
+const pathFromCoordinates = (
+  coordinates: ReadonlyArray<Coordinate>,
+  close = false,
+) =>
   `${coordinates
     .map((coordinate, index) => {
       const [x, y] = project(coordinate);
-      return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+      const crossesAntimeridian =
+        index > 0 && Math.abs(coordinate[0] - coordinates[index - 1][0]) > 180;
+      return `${index && !crossesAntimeridian ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join("")}${close ? "Z" : ""}`;
 
@@ -36,6 +45,8 @@ type Props = {
   onSelect?: (latitude: number, longitude: number) => void;
   compact?: boolean;
   replayTimeMs?: number;
+  event?: EclipseRecord;
+  path?: EclipsePathData;
 };
 
 export function EclipseMap({
@@ -44,12 +55,18 @@ export function EclipseMap({
   onSelect,
   compact = false,
   replayTimeMs,
+  event,
+  path,
 }: Props) {
   const pathMode = replayTimeMs !== undefined;
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [fullPath, setFullPath] = useState(false);
   const [markerX, markerY] = project([location.longitude, location.latitude]);
   const shadow = pathMode ? pathShadowAt(replayTimeMs) : null;
+  const show2026Path = (!event || event.id === "2026-08-12") && !path;
+  const greatestPoint = event
+    ? project([event.greatestPoint.longitude, event.greatestPoint.latitude])
+    : null;
   const shadowPoint = shadow ? project(shadow.center) : null;
   const shadowNorth = shadow ? project(shadow.north) : null;
   const shadowSouth = shadow ? project(shadow.south) : null;
@@ -96,9 +113,12 @@ export function EclipseMap({
     );
   };
 
+  const eventDescription = event
+    ? `${event.id} ${event.type} eclipse, greatest eclipse at ${event.greatestPoint.latitude.toFixed(1)} degrees latitude and ${event.greatestPoint.longitude.toFixed(1)} degrees longitude`
+    : "the verified 2026 path of totality";
   const ariaLabel = pathMode
     ? `Animated 2026 eclipse path map for ${location.label}; umbra at ${shadow?.timeUtc} UTC`
-    : `${interactive ? "Selectable world map" : "World map"} showing the verified 2026 path of totality and ${location.label}`;
+    : `${interactive ? "Selectable world map" : "World map"} showing ${eventDescription} and the selected location ${location.label}`;
 
   return (
     <div
@@ -111,7 +131,9 @@ export function EclipseMap({
         aria-label={ariaLabel}
         onPointerDown={handlePointer}
         onWheel={handleWheel}
-        data-testid={interactive ? "location-map" : "path-map"}
+        data-testid={
+          interactive ? "location-map" : pathMode ? "path-map" : "event-map"
+        }
         data-shadow-time={shadow?.timeUtc}
       >
         <rect width={WIDTH} height={HEIGHT} className="map-ocean" />
@@ -136,28 +158,54 @@ export function EclipseMap({
           />
         ))}
         <path d={LAND_PATH} className="map-land" />
-        <path
-          d={pathFromCoordinates(TOTALITY_BAND, true)}
-          className="totality-band"
-        />
-        <path
-          d={pathFromCoordinates(
-            TOTALITY_CENTERLINE.map((item) => item.coordinate),
+        {show2026Path && (
+          <path
+            d={pathFromCoordinates(TOTALITY_BAND, true)}
+            className="totality-band"
+          />
+        )}
+        {path?.north.length ? (
+          <path d={pathFromCoordinates(path.north)} className="path-limit" />
+        ) : null}
+        {path?.south.length ? (
+          <path d={pathFromCoordinates(path.south)} className="path-limit" />
+        ) : null}
+        {path?.centerline.length ? (
+          <path
+            d={pathFromCoordinates(path.centerline)}
+            className="centerline"
+          />
+        ) : null}
+        {show2026Path && (
+          <path
+            d={pathFromCoordinates(
+              TOTALITY_CENTERLINE.map((item) => item.coordinate),
+            )}
+            className="centerline"
+          />
+        )}
+        {show2026Path &&
+          TOTALITY_CENTERLINE.filter((_, index) => index % 5 === 0).map(
+            (item) => {
+              const [x, y] = project(item.coordinate);
+              return (
+                <g key={item.timeUtc} className="path-time">
+                  <circle cx={x} cy={y} r={3.5} />
+                  <text x={x + 7} y={y - 7}>
+                    {item.timeUtc}
+                  </text>
+                </g>
+              );
+            },
           )}
-          className="centerline"
-        />
-        {TOTALITY_CENTERLINE.filter((_, index) => index % 5 === 0).map(
-          (item) => {
-            const [x, y] = project(item.coordinate);
-            return (
-              <g key={item.timeUtc} className="path-time">
-                <circle cx={x} cy={y} r={3.5} />
-                <text x={x + 7} y={y - 7}>
-                  {item.timeUtc}
-                </text>
-              </g>
-            );
-          },
+        {greatestPoint && (
+          <g
+            className="map-greatest"
+            transform={`translate(${greatestPoint[0]} ${greatestPoint[1]})`}
+          >
+            <circle r={8} />
+            <path d="M-12 0H12M0-12V12" />
+          </g>
         )}
         {shadow && shadowPoint && shadowNorth && shadowSouth && (
           <g

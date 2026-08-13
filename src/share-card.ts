@@ -109,7 +109,19 @@ function drawSnapshot(
   context.stroke();
 }
 
-function drawBrand(context: CanvasRenderingContext2D) {
+function eventDateLabel(eventId: string) {
+  const date = new Date(`${eventId}T12:00:00Z`);
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+    .format(date)
+    .toUpperCase();
+}
+
+function drawBrand(context: CanvasRenderingContext2D, model: ShareCardModel) {
   context.fillStyle = "#ff9366";
   context.beginPath();
   context.arc(53, 45, 9, 0, Math.PI * 2);
@@ -124,11 +136,11 @@ function drawBrand(context: CanvasRenderingContext2D) {
   context.fillStyle = "#ff9366";
   context.fillText("/", 159, 51);
   context.fillStyle = "#f2f6fc";
-  context.fillText("26", 173, 51);
+  context.fillText("COMPANION", 173, 51);
   context.fillStyle = "#9fb0c2";
   context.font = `600 12px ${mono}`;
   context.textAlign = "right";
-  context.fillText("12 AUGUST 2026", 1148, 50);
+  context.fillText(eventDateLabel(model.eclipseWindow.eventId), 1148, 50);
   context.textAlign = "left";
 }
 
@@ -155,7 +167,7 @@ function drawShareCard(
   context.beginPath();
   context.arc(1010, 30, 300, 0, Math.PI * 2);
   context.fill();
-  drawBrand(context);
+  drawBrand(context, model);
 
   context.fillStyle = "#ffb486";
   context.font = `700 11px ${mono}`;
@@ -219,8 +231,8 @@ function drawShareCard(
   context.fillStyle = "#8295aa";
   context.font = `600 12px ${mono}`;
   context.fillText(
-    model.eclipseWindow.totalityDurationSeconds
-      ? `MAX ${model.peakTime} · TOTALITY ${model.totalityDurationLabel}`
+    model.eclipseWindow.centralStart && model.eclipseWindow.centralEnd
+      ? `MAX ${model.peakTime} · ${model.eclipseWindow.localType === "annular" ? "ANNULARITY" : "TOTALITY"} ${model.totalityDurationLabel}`
       : `MAX ${model.peakTime} · ${Math.round(model.eclipseWindow.peakObscuration * 100)}% COVERED`,
     48,
     488,
@@ -254,7 +266,7 @@ export function shareCardFilename(model: ShareCardModel) {
     .replace(/:\d{2}\.\d{3}Z$/, "Z")
     .replace(/[:T]/g, "-")
     .replace(/Z$/, "");
-  return `eclipse-26-${place}-${timestamp}.png`;
+  return `eclipse-${model.eclipseWindow.eventId}-${place}-${timestamp}.png`;
 }
 
 export async function createShareCard(model: ShareCardModel) {

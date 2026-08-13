@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { eclipseEvents } from "../live-view";
 import {
   ALERT_LEAD_OPTIONS,
+  alertCalendarFilename,
   buildAlertCalendar,
+  isEventArmed,
+  setEventArmed,
   type AlertPreferences,
 } from "../notifications";
 import type { EclipseWindow, ObserverLocation } from "../types";
@@ -76,7 +79,11 @@ export function NotificationDialog({
     setPermission(nextPermission);
     setRequesting(false);
     if (nextPermission === "granted") {
-      const next = { ...draft, enabled: true };
+      const next = setEventArmed(
+        { ...draft, enabled: true },
+        window.eventId,
+        true,
+      );
       setDraft(next);
       onSave(next);
       setMessage(`Alerts saved for ${location.label}.`);
@@ -92,12 +99,12 @@ export function NotificationDialog({
       setMessage("Choose at least one eclipse moment first.");
       return;
     }
-    onSave({ ...draft, enabled: true });
+    onSave(setEventArmed({ ...draft, enabled: true }, window.eventId, true));
     setMessage(`Alerts updated for ${location.label}.`);
   };
 
   const disableAlerts = () => {
-    const next = { ...draft, enabled: false };
+    const next = setEventArmed(draft, window.eventId, false);
     setDraft(next);
     onSave(next);
     setMessage("Browser alerts are off.");
@@ -114,13 +121,16 @@ export function NotificationDialog({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "eclipse-26-alerts.ics";
+    link.download = alertCalendarFilename(window);
     link.click();
     URL.revokeObjectURL(url);
     setMessage("Calendar file downloaded with your selected reminders.");
   };
 
-  const active = draft.enabled && permission === "granted";
+  const active =
+    draft.enabled &&
+    isEventArmed(draft, window.eventId) &&
+    permission === "granted";
   const canRequest = permission === "default" || permission === "granted";
 
   return (
@@ -154,7 +164,7 @@ export function NotificationDialog({
               ◒
             </span>
             <div>
-              <small>ALERTS FOR YOUR SET LOCATION</small>
+              <small>ALERTS FOR {window.eventId}</small>
               <strong>{location.label}</strong>
               <span>
                 {Math.abs(location.latitude).toFixed(2)}°{" "}
@@ -237,9 +247,9 @@ export function NotificationDialog({
         </div>
 
         <footer className="dialog-actions notification-actions">
-          {preferences.enabled && (
+          {isEventArmed(preferences, window.eventId) && (
             <button className="text-button" onClick={disableAlerts}>
-              Turn off alerts
+              Turn off for this eclipse
             </button>
           )}
           <button className="secondary-button" onClick={downloadCalendar}>

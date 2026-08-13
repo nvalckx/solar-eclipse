@@ -1,7 +1,24 @@
 import * as Astronomy from "astronomy-engine";
-import type { EclipseWindow, ObserverLocation, SkyState } from "./types";
+import {
+  ECLIPSE_CATALOG,
+  ECLIPSE_CATALOG_METADATA,
+  eclipseById,
+  eclipseNearPeak,
+} from "./eclipse-catalog";
+import type {
+  EclipseId,
+  EclipseRecord,
+  EclipseType,
+  EclipseWindow,
+  LocalEclipseResult,
+  ObserverLocation,
+  SkyState,
+} from "./types";
 
-const EVENT_SEARCH_START = new Date("2026-08-01T00:00:00Z");
+export const DEFAULT_ECLIPSE_ID = "2026-08-12" as EclipseId;
+const EVENT_MATCH_TOLERANCE_MS = 48 * 60 * 60 * 1000;
+const EVENT_SEARCH_LEAD_MS = 48 * 60 * 60 * 1000;
+const VISIBLE_SUN_ALTITUDE_DEG = -0.833;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
@@ -116,31 +133,183 @@ function twilightForAltitude(altitude: number): SkyState["twilightLevel"] {
   return "night";
 }
 
-export function eclipseWindowFor(location: ObserverLocation): EclipseWindow {
+function localTypeFor(kind: Astronomy.EclipseKind): EclipseWindow["localType"] {
+  switch (kind) {
+    case Astronomy.EclipseKind.Total:
+      return "total";
+    case Astronomy.EclipseKind.Annular:
+      return "annular";
+    default:
+      return "partial";
+  }
+}
+
+function phaseLabelFor(
+  globalType: EclipseType,
+  localType: EclipseWindow["localType"],
+) {
+  if (globalType === "hybrid") {
+    return `Hybrid eclipse · locally ${localType}`;
+  }
+  return `${localType[0].toUpperCase()}${localType.slice(1)} eclipse`;
+}
+
+function sourceUrlFor(record: EclipseRecord) {
+  return record.pathUrl ?? record.mapUrl;
+}
+
+function eventMatchesRecord(localPeak: Date, record: EclipseRecord): boolean {
+  return eclipseNearPeak(localPeak, EVENT_MATCH_TOLERANCE_MS)?.id === record.id;
+}
+
+/** Astronomy Engine can return theoretical local events below the horizon. */
+export function localEclipseIsAboveHorizon(
+  eclipse: Astronomy.LocalSolarEclipseInfo,
+) {
+  return [
+    eclipse.partial_begin,
+    eclipse.total_begin,
+    eclipse.peak,
+    eclipse.total_end,
+    eclipse.partial_end,
+  ].some(
+    (event) => event !== undefined && event.altitude > VISIBLE_SUN_ALTITUDE_DEG,
+  );
+}
+
+function windowFromSearchResult(
+  eclipse: Astronomy.LocalSolarEclipseInfo,
+  record: EclipseRecord,
+): EclipseWindow {
+  const centralStart = eclipse.total_begin?.time.date;
+  const centralEnd = eclipse.total_end?.time.date;
+  const localType = localTypeFor(eclipse.kind);
+  const isLocalTotal = localType === "total";
+  return {
+    eventId: record.id,
+    globalType: record.type,
+    localType,
+    phaseLabel: phaseLabelFor(record.type, localType),
+    start: eclipse.partial_begin.time.date,
+    peak: eclipse.peak.time.date,
+    end: eclipse.partial_end.time.date,
+    centralStart,
+    centralEnd,
+    // Keep these aliases for the existing simulation and notification code.
+    totalStart: isLocalTotal ? centralStart : undefined,
+    totalEnd: isLocalTotal ? centralEnd : undefined,
+    totalityDurationSeconds:
+      isLocalTotal && centralStart && centralEnd
+        ? (centralEnd.getTime() - centralStart.getTime()) / 1000
+        : undefined,
+    kind: eclipse.kind,
+    peakObscuration: eclipse.obscuration,
+    visible: true,
+    sourceUrl: sourceUrlFor(record),
+  };
+}
+
+/** Calculates one requested catalog event and never substitutes a later event. */
+export function localEclipseFor(
+  eventId: EclipseId,
+  location: ObserverLocation,
+): LocalEclipseResult {
+  const record = eclipseById(eventId);
+  if (!record) {
+    throw new RangeError(`Unknown eclipse event: ${eventId}`);
+  }
   const observer = new Astronomy.Observer(
     location.latitude,
     location.longitude,
     location.elevationMeters,
   );
-  const eclipse = Astronomy.SearchLocalSolarEclipse(
-    EVENT_SEARCH_START,
-    observer,
+  const searchStart = new Date(
+    new Date(record.peakUtc).getTime() - EVENT_SEARCH_LEAD_MS,
   );
-  const totalStart = eclipse.total_begin?.time.date;
-  const totalEnd = eclipse.total_end?.time.date;
+  const eclipse = Astronomy.SearchLocalSolarEclipse(searchStart, observer);
+  if (
+    !eventMatchesRecord(eclipse.peak.time.date, record) ||
+    !localEclipseIsAboveHorizon(eclipse)
+  ) {
+    return { visible: false, eventId, record, reason: "not-visible" };
+  }
   return {
-    start: eclipse.partial_begin.time.date,
-    peak: eclipse.peak.time.date,
-    end: eclipse.partial_end.time.date,
-    totalStart,
-    totalEnd,
-    totalityDurationSeconds:
-      totalStart && totalEnd
-        ? (totalEnd.getTime() - totalStart.getTime()) / 1000
-        : undefined,
-    kind: eclipse.kind,
-    peakObscuration: eclipse.obscuration,
+    visible: true,
+    eventId,
+    record,
+    window: windowFromSearchResult(eclipse, record),
   };
+}
+
+/** Compatibility helper for views that require a visible event window. */
+export function eclipseWindowFor(
+  location: ObserverLocation,
+  eventId: EclipseId = DEFAULT_ECLIPSE_ID,
+): EclipseWindow {
+  const result = localEclipseFor(eventId, location);
+  if (!result.visible) {
+    throw new RangeError(`${eventId} is not visible from ${location.label}`);
+  }
+  return result.window;
+}
+
+export function nextVisibleEclipse(
+  location: ObserverLocation,
+  from: Date = new Date(),
+): LocalEclipseResult | undefined {
+  const observer = new Astronomy.Observer(
+    location.latitude,
+    location.longitude,
+    location.elevationMeters,
+  );
+  const catalogStart = new Date(
+    `${ECLIPSE_CATALOG_METADATA.range.start}T00:00:00Z`,
+  );
+  const catalogEnd = new Date(
+    `${ECLIPSE_CATALOG_METADATA.range.end}T23:59:59Z`,
+  );
+  const requestedSearchStart = new Date(from.getTime() - EVENT_SEARCH_LEAD_MS);
+  const searchStart =
+    requestedSearchStart > catalogStart ? requestedSearchStart : catalogStart;
+  let eclipse = Astronomy.SearchLocalSolarEclipse(searchStart, observer);
+  for (let count = 0; count < ECLIPSE_CATALOG.length * 2; count += 1) {
+    if (eclipse.peak.time.date > catalogEnd) return undefined;
+    const record = eclipseNearPeak(
+      eclipse.peak.time.date,
+      EVENT_MATCH_TOLERANCE_MS,
+    );
+    if (
+      eclipse.partial_end.time.date >= from &&
+      record &&
+      localEclipseIsAboveHorizon(eclipse)
+    ) {
+      return {
+        visible: true,
+        eventId: record.id,
+        record,
+        window: windowFromSearchResult(eclipse, record),
+      };
+    }
+    eclipse = Astronomy.NextLocalSolarEclipse(eclipse.peak.time, observer);
+  }
+  return undefined;
+}
+
+export function nextLocalTotalEclipse(
+  location: ObserverLocation,
+  from: Date = new Date(),
+): LocalEclipseResult | undefined {
+  for (const record of ECLIPSE_CATALOG) {
+    if (
+      new Date(record.peakUtc) < from ||
+      (record.type !== "total" && record.type !== "hybrid")
+    ) {
+      continue;
+    }
+    const result = localEclipseFor(record.id, location);
+    if (result.visible && result.window.localType === "total") return result;
+  }
+  return undefined;
 }
 
 export function calculateSkyState(
@@ -182,12 +351,19 @@ export function calculateSkyState(
     moonEquator.dec,
     "normal",
   );
-  const sunVector = Astronomy.GeoVector(Astronomy.Body.Sun, time, true);
-  const moonVector = Astronomy.GeoVector(Astronomy.Body.Moon, time, true);
-  const vectorDistance = (vector: Astronomy.Vector) =>
-    Math.hypot(vector.x, vector.y, vector.z) * Astronomy.KM_PER_AU;
-  const sunDistance = vectorDistance(sunVector);
-  const moonDistance = vectorDistance(moonVector);
+  const observerVector = Astronomy.ObserverVector(time, observer, false);
+  const topocentricDistance = (body: Astronomy.Body) => {
+    const vector = Astronomy.GeoVector(body, time, true);
+    return (
+      Math.hypot(
+        vector.x - observerVector.x,
+        vector.y - observerVector.y,
+        vector.z - observerVector.z,
+      ) * Astronomy.KM_PER_AU
+    );
+  };
+  const sunDistance = topocentricDistance(Astronomy.Body.Sun);
+  const moonDistance = topocentricDistance(Astronomy.Body.Moon);
   const sun = {
     azimuthDeg: sunHorizon.azimuth,
     altitudeDeg: sunHorizon.altitude,
@@ -205,25 +381,25 @@ export function calculateSkyState(
   const moonRadius = moon.angularDiameterDeg / 2;
   const obscuration = circleOverlapPercent(sunRadius, moonRadius, separation);
   const inWindow = date >= eclipseWindow.start && date <= eclipseWindow.end;
-  const visible = inWindow && sun.altitudeDeg > -0.833 && obscuration > 0;
-  const total =
+  const visible =
+    inWindow && sun.altitudeDeg > VISIBLE_SUN_ALTITUDE_DEG && obscuration > 0;
+  const central =
     visible &&
-    eclipseWindow.kind === Astronomy.EclipseKind.Total &&
-    !!eclipseWindow.totalStart &&
-    !!eclipseWindow.totalEnd &&
-    date >= eclipseWindow.totalStart &&
-    date <= eclipseWindow.totalEnd;
+    !!eclipseWindow.centralStart &&
+    !!eclipseWindow.centralEnd &&
+    date >= eclipseWindow.centralStart &&
+    date <= eclipseWindow.centralEnd;
   return {
     timestampUtc: date.toISOString(),
     sun,
     moon,
     eclipse: {
       visible,
-      type: total ? "total" : visible ? "partial" : "none",
+      type: central ? eclipseWindow.localType : visible ? "partial" : "none",
       firstContact: eclipseWindow.start.toISOString(),
-      secondContact: eclipseWindow.totalStart?.toISOString(),
+      secondContact: eclipseWindow.centralStart?.toISOString(),
       maximum: eclipseWindow.peak.toISOString(),
-      thirdContact: eclipseWindow.totalEnd?.toISOString(),
+      thirdContact: eclipseWindow.centralEnd?.toISOString(),
       fourthContact: eclipseWindow.end.toISOString(),
       obscurationPercent: visible ? clamp(obscuration, 0, 100) : 0,
       magnitude: visible

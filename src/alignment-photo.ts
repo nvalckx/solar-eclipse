@@ -7,6 +7,7 @@ import type { SkyState } from "./types";
 export type AlignmentPhotoMetadata = {
   includeOverlay: boolean;
   showEclipse: boolean;
+  brandLabel: string;
   eventLabel: string;
   eventTime: string;
   directionLabel: string;
@@ -121,7 +122,7 @@ export function drawAlignmentPhotoOverlay(
   context.fillStyle = "#ffc08c";
   context.font = `700 ${detailSize}px ui-monospace, monospace`;
   context.fillText(
-    "ECLIPSE/26 · AR PREVIEW",
+    metadata.brandLabel,
     padding,
     height - panelHeight + padding + detailSize,
   );

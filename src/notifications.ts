@@ -1,14 +1,16 @@
 import { eclipseEvents, type EclipseEventKey } from "./live-view";
-import type { EclipseWindow, ObserverLocation } from "./types";
+import type { EclipseId, EclipseWindow, ObserverLocation } from "./types";
+import { isEclipseId, LEGACY_ECLIPSE_ID } from "./view-state";
 
 export const ALERTS_STORAGE_KEY = "eclipse26-alerts";
 export const ALERT_LEAD_OPTIONS = [0, 5, 10, 15, 30, 60] as const;
 
 export type AlertPreferences = {
-  version: 1;
+  version: 2;
   enabled: boolean;
   leadMinutes: (typeof ALERT_LEAD_OPTIONS)[number];
   eventKeys: EclipseEventKey[];
+  armedEventIds: EclipseId[];
 };
 
 export type ScheduledAlert = {
@@ -19,10 +21,11 @@ export type ScheduledAlert = {
 };
 
 export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
-  version: 1,
+  version: 2,
   enabled: false,
   leadMinutes: 15,
   eventKeys: ["C1", "C2", "MAX"],
+  armedEventIds: [],
 };
 
 const EVENT_KEYS: EclipseEventKey[] = ["C1", "C2", "MAX", "C3", "C4"];
@@ -42,17 +45,27 @@ export function parseStoredAlertPreferences(
     const eventKeys = Array.isArray(storedEventKeys)
       ? EVENT_KEYS.filter((key) => storedEventKeys.includes(key))
       : [];
-    if (
-      candidate.version !== 1 ||
-      leadMinutes === undefined ||
-      !eventKeys.length
-    )
+    if (leadMinutes === undefined || !eventKeys.length)
       return DEFAULT_ALERT_PREFERENCES;
+    if (candidate.version === 1) {
+      return {
+        version: 2,
+        enabled: candidate.enabled === true,
+        leadMinutes,
+        eventKeys,
+        armedEventIds: candidate.enabled === true ? [LEGACY_ECLIPSE_ID] : [],
+      };
+    }
+    const storedEventIds = candidate.armedEventIds;
+    if (candidate.version !== 2 || !Array.isArray(storedEventIds))
+      return DEFAULT_ALERT_PREFERENCES;
+    const armedEventIds = [...new Set(storedEventIds.filter(isEclipseId))];
     return {
-      version: 1,
+      version: 2,
       enabled: candidate.enabled === true,
       leadMinutes,
       eventKeys,
+      armedEventIds,
     };
   } catch {
     return DEFAULT_ALERT_PREFERENCES;
@@ -63,11 +76,32 @@ export function serializeAlertPreferences(preferences: AlertPreferences) {
   return JSON.stringify(preferences);
 }
 
+export function isEventArmed(
+  preferences: AlertPreferences,
+  eclipseId: EclipseId,
+) {
+  return preferences.armedEventIds.includes(eclipseId);
+}
+
+export function setEventArmed(
+  preferences: AlertPreferences,
+  eclipseId: EclipseId,
+  armed: boolean,
+): AlertPreferences {
+  const armedEventIds = preferences.armedEventIds.filter(
+    (storedId) => storedId !== eclipseId,
+  );
+  if (armed) armedEventIds.push(eclipseId);
+  return { ...preferences, armedEventIds };
+}
+
 export function buildAlertSchedule(
   window: EclipseWindow,
   preferences: AlertPreferences,
   now = new Date(),
 ): ScheduledAlert[] {
+  if (!preferences.enabled || !isEventArmed(preferences, window.eventId))
+    return [];
   const leadMs = preferences.leadMinutes * 60_000;
   return eclipseEvents(window)
     .filter((event) => preferences.eventKeys.includes(event.key))
@@ -116,10 +150,10 @@ export function buildAlertCalendar(
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Eclipse 26//Local eclipse alerts//EN",
+    "PRODID:-//Eclipse Companion//Local eclipse alerts//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:Eclipse/26 alerts",
+    `X-WR-CALNAME:Solar eclipse ${window.eventId} alerts`,
   ];
   for (const event of events) {
     const start = calendarDate(event.time);
@@ -127,11 +161,11 @@ export function buildAlertCalendar(
     const coordinates = `${location.latitude.toFixed(5)},${location.longitude.toFixed(5)}`;
     lines.push(
       "BEGIN:VEVENT",
-      `UID:eclipse26-${event.key.toLowerCase()}-${location.latitude.toFixed(4)}-${location.longitude.toFixed(4)}@local`,
+      `UID:solar-eclipse-${window.eventId}-${event.key.toLowerCase()}-${location.latitude.toFixed(4)}-${location.longitude.toFixed(4)}@local`,
       `DTSTAMP:${generatedAt}`,
       `DTSTART:${start}`,
       `DTEND:${end}`,
-      `SUMMARY:${calendarText(`Eclipse/26 — ${event.label}`)}`,
+      `SUMMARY:${calendarText(`Solar eclipse ${window.eventId} — ${event.label}`)}`,
       `DESCRIPTION:${calendarText(`Local eclipse contact for ${location.label}. Calculated for ${coordinates}.`)}`,
       `LOCATION:${calendarText(location.label)}`,
       "BEGIN:VALARM",
@@ -144,4 +178,8 @@ export function buildAlertCalendar(
   }
   lines.push("END:VCALENDAR");
   return `${lines.join("\r\n")}\r\n`;
+}
+
+export function alertCalendarFilename(window: Pick<EclipseWindow, "eventId">) {
+  return `solar-eclipse-${window.eventId}-alerts.ics`;
 }

@@ -1,23 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CITY_CATALOG, FEATURED_CITY_CATALOG } from "../city-catalog";
+import { FEATURED_CITY_CATALOG } from "../city-catalog";
 import { isValidLocation, isValidTimezone } from "../eclipse-logic";
-import type { ObserverLocation } from "../types";
+import { searchPlaces, timezoneAt } from "../place-catalog";
+import type {
+  EclipsePathData,
+  EclipseRecord,
+  ObserverLocation,
+} from "../types";
 import { EclipseMap } from "./EclipseMap";
 
 type Props = {
   current: ObserverLocation;
+  event: EclipseRecord;
+  path?: EclipsePathData;
   onConfirm: (location: ObserverLocation) => void;
   onClose: () => void;
 };
 
-const normalizeSearch = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
 const formatCoordinate = (value: number, positive: string, negative: string) =>
   `${Math.abs(value).toFixed(2)}° ${value >= 0 ? positive : negative}`;
+
+function parseCoordinatePair(value: string) {
+  const match = value
+    .trim()
+    .match(/^([+-]?\d+(?:\.\d+)?)\s*(?:,|;|\s)\s*([+-]?\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  return isValidLocation(latitude, longitude) ? { latitude, longitude } : null;
+}
 
 function timezoneOptions() {
   try {
@@ -30,19 +41,40 @@ function timezoneOptions() {
   }
 }
 
-export function LocationDialog({ current, onConfirm, onClose }: Props) {
+export function LocationDialog({
+  current,
+  event,
+  path,
+  onConfirm,
+  onClose,
+}: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(current);
   const [query, setQuery] = useState("");
+  const [coordinatePaste, setCoordinatePaste] = useState("");
   const [message, setMessage] = useState("");
+  const [suggestions, setSuggestions] = useState(FEATURED_CITY_CATALOG);
+  const [searching, setSearching] = useState(false);
   const zones = useMemo(timezoneOptions, []);
-  const suggestions = useMemo(() => {
-    const normalized = normalizeSearch(query);
-    return normalized
-      ? CITY_CATALOG.filter((place) =>
-          normalizeSearch(place.label).includes(normalized),
-        ).slice(0, 10)
-      : FEATURED_CITY_CATALOG;
+
+  useEffect(() => {
+    let active = true;
+    if (!query.trim()) {
+      setSuggestions(FEATURED_CITY_CATALOG);
+      return;
+    }
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      void searchPlaces(query).then((places) => {
+        if (!active) return;
+        setSuggestions(places);
+        setSearching(false);
+      });
+    }, 120);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, [query]);
 
   useEffect(() => {
@@ -68,7 +100,17 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
       label: `${formatCoordinate(lat, "N", "S")} · ${formatCoordinate(lon, "E", "W")}`,
       source: "coordinates",
     }));
-    setMessage("Coordinates selected. Confirm the time zone before applying.");
+    setMessage("Coordinates selected. Finding the local time zone…");
+    void timezoneAt(lat, lon)
+      .then((timezone) => {
+        setDraft((value) => ({ ...value, timezone }));
+        setMessage(`Coordinates selected · ${timezone}.`);
+      })
+      .catch(() =>
+        setMessage(
+          "Coordinates selected. Confirm the time zone before applying.",
+        ),
+      );
   };
 
   const useMyLocation = () => {
@@ -103,6 +145,7 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
   const valid =
     isValidLocation(draft.latitude, draft.longitude) &&
     isValidTimezone(draft.timezone);
+  const pastedCoordinates = parseCoordinatePair(coordinatePaste);
 
   return (
     <dialog
@@ -141,6 +184,8 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
             <div className="map-wrap">
               <EclipseMap
                 location={draft}
+                event={event}
+                path={path}
                 interactive
                 onSelect={updateCoordinates}
                 compact
@@ -181,6 +226,38 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
                 />
               </label>
             </div>
+            <div className="coordinate-paste-row">
+              <label>
+                Paste coordinate pair
+                <input
+                  value={coordinatePaste}
+                  inputMode="decimal"
+                  placeholder="52.3676, 4.9041"
+                  onChange={(event) => setCoordinatePaste(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || !pastedCoordinates) return;
+                    event.preventDefault();
+                    updateCoordinates(
+                      pastedCoordinates.latitude,
+                      pastedCoordinates.longitude,
+                    );
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!pastedCoordinates}
+                onClick={() => {
+                  if (!pastedCoordinates) return;
+                  updateCoordinates(
+                    pastedCoordinates.latitude,
+                    pastedCoordinates.longitude,
+                  );
+                }}
+              >
+                Use coordinates
+              </button>
+            </div>
             <label className="timezone-field">
               Time zone
               <input
@@ -213,12 +290,12 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
           </section>
           <section className="featured-places">
             <label className="search-field">
-              Featured places
+              Search places worldwide
               <input
                 data-testid="city-search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search featured places…"
+                placeholder="Search Natural Earth places…"
               />
             </label>
             <div className="place-list">
@@ -233,7 +310,8 @@ export function LocationDialog({ current, onConfirm, onClose }: Props) {
                   <small>{formatCoordinate(place.latitude, "N", "S")}</small>
                 </button>
               ))}
-              {!suggestions.length && (
+              {searching && <p className="dialog-status">Searching places…</p>}
+              {!searching && !suggestions.length && (
                 <p className="empty-state" role="status">
                   No featured match. Choose a point on the map or enter
                   coordinates.

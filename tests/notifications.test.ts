@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import { eclipseWindowFor } from "../src/eclipse-logic";
 import {
   alertBody,
+  alertCalendarFilename,
   buildAlertCalendar,
   buildAlertSchedule,
   DEFAULT_ALERT_PREFERENCES,
   parseStoredAlertPreferences,
+  setEventArmed,
   serializeAlertPreferences,
 } from "../src/notifications";
 import type { ObserverLocation } from "../src/types";
@@ -28,6 +30,7 @@ describe("local eclipse alerts", () => {
       enabled: true,
       leadMinutes: 30 as const,
       eventKeys: ["C1", "MAX", "C4"] as const,
+      armedEventIds: [window.eventId],
     };
     expect(
       parseStoredAlertPreferences(
@@ -42,11 +45,29 @@ describe("local eclipse alerts", () => {
     );
   });
 
+  test("migrates v1 enabled alerts by arming only the legacy 2026 event", () => {
+    expect(
+      parseStoredAlertPreferences(
+        JSON.stringify({
+          version: 1,
+          enabled: true,
+          leadMinutes: 15,
+          eventKeys: ["C1", "MAX"],
+        }),
+      ),
+    ).toMatchObject({
+      version: 2,
+      enabled: true,
+      armedEventIds: ["2026-08-12"],
+    });
+  });
+
   test("builds future reminders from selected local contacts", () => {
     const schedule = buildAlertSchedule(
       window,
       {
-        ...DEFAULT_ALERT_PREFERENCES,
+        ...setEventArmed(DEFAULT_ALERT_PREFERENCES, window.eventId, true),
+        enabled: true,
         eventKeys: ["C1", "MAX", "C4"],
         leadMinutes: 30,
       },
@@ -61,6 +82,15 @@ describe("local eclipse alerts", () => {
     );
   });
 
+  test("does not schedule an event until that eclipse is explicitly armed", () => {
+    expect(
+      buildAlertSchedule(window, {
+        ...DEFAULT_ALERT_PREFERENCES,
+        enabled: true,
+      }),
+    ).toEqual([]);
+  });
+
   test("exports standards-based calendar alarms for background reminders", () => {
     const calendar = buildAlertCalendar(window, zaragoza, {
       ...DEFAULT_ALERT_PREFERENCES,
@@ -70,6 +100,12 @@ describe("local eclipse alerts", () => {
     expect(calendar.match(/BEGIN:VEVENT/g)).toHaveLength(2);
     expect(calendar).toContain("TRIGGER:-PT15M");
     expect(calendar).toContain("LOCATION:Zaragoza\\, Spain");
-    expect(calendar).toContain("SUMMARY:Eclipse/26 — Totality begins");
+    expect(calendar).toContain(
+      `SUMMARY:Solar eclipse ${window.eventId} — Totality begins`,
+    );
+    expect(calendar).toContain(`UID:solar-eclipse-${window.eventId}-c2-`);
+    expect(alertCalendarFilename(window)).toBe(
+      `solar-eclipse-${window.eventId}-alerts.ics`,
+    );
   });
 });

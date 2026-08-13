@@ -4,4 +4,7 @@ test-results
 playwright-report
 pnpm-lock.yaml
 src/generated-land-path.ts
+src/generated-eclipse-catalog.json
+src/generated-eclipse-paths/
+src/generated-place-catalog.json
 public/social-card.png

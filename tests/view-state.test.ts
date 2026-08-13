@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   buildShareUrl,
+  parseStoredEclipseId,
   parseSharedView,
   parseStoredLocation,
   serializeStoredLocation,
+  serializeStoredEclipseId,
 } from "../src/view-state";
 import type { ObserverLocation } from "../src/types";
 
@@ -37,6 +39,14 @@ describe("persisted and shared views", () => {
     );
   });
 
+  test("stores the selected eclipse independently from the location", () => {
+    expect(parseStoredEclipseId(serializeStoredEclipseId("2135-10-07"))).toBe(
+      "2135-10-07",
+    );
+    expect(parseStoredEclipseId('"2027-02-30"')).toBeNull();
+    expect(parseStoredEclipseId("broken")).toBeNull();
+  });
+
   test("rejects malformed storage and invalid shared coordinates", () => {
     expect(parseStoredLocation("{broken")).toBeNull();
     expect(parseSharedView("?lat=999&lon=1&tz=UTC", fallback).location).toEqual(
@@ -56,6 +66,18 @@ describe("persisted and shared views", () => {
     });
     expect(view.timestamp?.toISOString()).toBe("2026-08-12T18:00:00.000Z");
     expect(view.mode).toBe("closeup");
+    expect(view.version).toBe(1);
+    expect(view.eclipseId).toBeUndefined();
+  });
+
+  test("parses v2 event links and accepts time as a legacy timestamp alias", () => {
+    const view = parseSharedView(
+      "?v=2&eclipse=2135-10-07&time=2135-10-07T10%3A00%3A00Z",
+      fallback,
+    );
+    expect(view.version).toBe(2);
+    expect(view.eclipseId).toBe("2135-10-07");
+    expect(view.timestamp?.toISOString()).toBe("2135-10-07T10:00:00.000Z");
   });
 
   test("builds a versioned share URL without preserving unrelated query parameters", () => {
@@ -67,9 +89,25 @@ describe("persisted and shared views", () => {
         "sky",
       ),
     );
-    expect(url.searchParams.get("v")).toBe("1");
+    expect(url.searchParams.get("v")).toBe("2");
+    expect(url.searchParams.get("eclipse")).toBe("2026-08-12");
     expect(url.searchParams.get("junk")).toBeNull();
     expect(url.searchParams.get("mode")).toBe("sky");
     expect(url.searchParams.get("tz")).toBe("Europe/Madrid");
+    expect(url.searchParams.get("t")).toBe("2026-08-12T18:29:36.000Z");
+    expect(url.searchParams.get("time")).toBeNull();
+  });
+
+  test("builds a share URL for the selected century-catalog event", () => {
+    const url = new URL(
+      buildShareUrl(
+        "https://example.test/eclipse/",
+        fallback,
+        new Date("2135-10-07T10:00:00Z"),
+        "closeup",
+        "2135-10-07",
+      ),
+    );
+    expect(url.searchParams.get("eclipse")).toBe("2135-10-07");
   });
 });

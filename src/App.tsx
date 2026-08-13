@@ -1,12 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as Astronomy from "astronomy-engine";
 import { DEFAULT_CITY } from "./city-catalog";
-import { calculateSkyState, eclipseWindowFor } from "./eclipse-logic";
-import type { ObserverLocation, SkyMode, SkyState } from "./types";
+import {
+  calculateSkyState,
+  DEFAULT_ECLIPSE_ID,
+  localEclipseFor,
+  nextLocalTotalEclipse,
+  nextVisibleEclipse,
+} from "./eclipse-logic";
+import { ECLIPSE_CATALOG, eclipseById } from "./eclipse-catalog";
+import { loadEclipsePath } from "./eclipse-paths";
+import type {
+  AppView,
+  EclipseId,
+  EclipseRecord,
+  EclipsePathData,
+  EclipseWindow,
+  ObserverLocation,
+  SkyMode,
+  SkyState,
+} from "./types";
 import {
   buildShareUrl,
   LOCATION_STORAGE_KEY,
   parseSharedView,
+  parseStoredEclipseId,
   parseStoredLocation,
+  SELECTED_ECLIPSE_STORAGE_KEY,
+  serializeStoredEclipseId,
   serializeStoredLocation,
 } from "./view-state";
 import { LocationDialog } from "./components/LocationDialog";
@@ -18,12 +39,17 @@ import { DirectionCompass } from "./components/DirectionCompass";
 import { LiveView } from "./components/LiveView";
 import { PhoneAlignmentDialog } from "./components/PhoneAlignmentDialog";
 import { NotificationDialog } from "./components/NotificationDialog";
-import { PATH_END_MS, PATH_START_MS } from "./map-data";
+import { EclipseCatalog } from "./components/EclipseCatalog";
+import { DetailedMap } from "./components/DetailedMap";
+import { EclipseMap } from "./components/EclipseMap";
+import { timezoneAt } from "./place-catalog";
+import { nearestPointOnPath, PATH_END_MS, PATH_START_MS } from "./map-data";
 import {
   ALERTS_STORAGE_KEY,
   alertBody,
   buildAlertSchedule,
   DEFAULT_ALERT_PREFERENCES,
+  isEventArmed,
   parseStoredAlertPreferences,
   serializeAlertPreferences,
   type AlertPreferences,
@@ -74,6 +100,33 @@ function readSavedAlerts() {
   }
 }
 
+function readSavedEclipseId() {
+  try {
+    return parseStoredEclipseId(
+      localStorage.getItem(SELECTED_ECLIPSE_STORAGE_KEY),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function unavailableWindow(record: EclipseRecord): EclipseWindow {
+  const peak = new Date(record.peakUtc);
+  return {
+    eventId: record.id,
+    globalType: record.type,
+    localType: "partial",
+    phaseLabel: "Not visible from this location",
+    start: new Date(peak.getTime() - 2 * 60 * 60_000),
+    peak,
+    end: new Date(peak.getTime() + 2 * 60 * 60_000),
+    kind: Astronomy.EclipseKind.Partial,
+    peakObscuration: 0,
+    visible: false,
+    sourceUrl: record.pathUrl ?? record.mapUrl,
+  };
+}
+
 function localDateTime(date: Date, timezone: string, full = false) {
   return new Intl.DateTimeFormat(undefined, {
     timeZone: timezone,
@@ -107,6 +160,8 @@ function eventLabel(state: SkyState) {
   if (state.sun.altitudeDeg <= -0.833) return "The Sun is below your horizon";
   if (!state.eclipse.visible) return "Outside the local eclipse phase";
   if (state.eclipse.type === "total") return "Totality — the corona is visible";
+  if (state.eclipse.type === "annular")
+    return "Annularity — the ring of fire is visible";
   return `${Math.round(state.eclipse.obscurationPercent)}% of the Sun is covered`;
 }
 
@@ -121,7 +176,7 @@ function timeAtCoverage(
   endMs: number,
   targetPercent: number,
   location: ObserverLocation,
-  eclipseWindow: ReturnType<typeof eclipseWindowFor>,
+  eclipseWindow: EclipseWindow,
   ascending: boolean,
 ) {
   let low = startMs;
@@ -143,13 +198,45 @@ function timeAtCoverage(
 export function App() {
   const initial = useMemo(() => {
     const fallback = readSavedLocation() ?? DEFAULT_CITY;
-    const shared = parseSharedView(window.location.search, fallback);
-    const eclipse = eclipseWindowFor(shared.location);
+    const storedId = readSavedEclipseId();
+    const next = nextVisibleEclipse(fallback, new Date());
+    const params = new URLSearchParams(window.location.search);
+    const requestedView = params.get("view");
+    const fallbackId =
+      requestedView === null
+        ? (next?.eventId ?? storedId ?? DEFAULT_ECLIPSE_ID)
+        : (storedId ?? next?.eventId ?? DEFAULT_ECLIPSE_ID);
+    const shared = parseSharedView(
+      window.location.search,
+      fallback,
+      fallbackId,
+    );
+    const migratedLegacyId =
+      shared.version === 1 &&
+      (params.has("lat") || params.has("time") || params.has("mode"))
+        ? DEFAULT_ECLIPSE_ID
+        : undefined;
+    const requestedEclipseId =
+      shared.eclipseId ?? migratedLegacyId ?? fallbackId;
+    const eclipseId = eclipseById(requestedEclipseId)
+      ? requestedEclipseId
+      : fallbackId;
+    const result = localEclipseFor(eclipseId, shared.location);
+    const eclipse = result.visible
+      ? result.window
+      : unavailableWindow(result.record);
     const min = eclipse.start.getTime() - 30 * 60_000;
     const max = eclipse.end.getTime() + 30 * 60_000;
     return {
       location: shared.location,
       mode: shared.mode,
+      eclipseId,
+      view:
+        requestedView === "catalog"
+          ? ("catalog" as const)
+          : shared.eclipseId
+            ? ("event" as const)
+            : ("next" as const),
       nowMs: clamp(
         shared.timestamp?.getTime() ?? eclipse.peak.getTime(),
         min,
@@ -159,6 +246,10 @@ export function App() {
   }, []);
 
   const [location, setLocation] = useState(initial.location);
+  const [selectedEclipseId, setSelectedEclipseId] = useState<EclipseId>(
+    initial.eclipseId,
+  );
+  const [appView, setAppView] = useState<AppView>(initial.view);
   const [mode, setMode] = useState<SkyMode>(initial.mode);
   const [nowMs, setNowMs] = useState(initial.nowMs);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
@@ -175,6 +266,7 @@ export function App() {
   const [shareError, setShareError] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [eventPath, setEventPath] = useState<EclipsePathData | null>(null);
   const pathReturnRef = useRef<{ nowMs: number; isPlaying: boolean } | null>(
     null,
   );
@@ -187,7 +279,46 @@ export function App() {
   const shareGenerationRef = useRef(0);
   const sharePreviewUrlRef = useRef("");
 
-  const eclipseWindow = useMemo(() => eclipseWindowFor(location), [location]);
+  const eclipseResult = useMemo(
+    () => localEclipseFor(selectedEclipseId, location),
+    [location, selectedEclipseId],
+  );
+  const selectedRecord = eclipseResult.record;
+  const eclipseWindow = useMemo(
+    () =>
+      eclipseResult.visible
+        ? eclipseResult.window
+        : unavailableWindow(eclipseResult.record),
+    [eclipseResult],
+  );
+  useEffect(() => {
+    let active = true;
+    setEventPath(null);
+    void loadEclipsePath(selectedEclipseId).then((path) => {
+      if (active) setEventPath(path ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedEclipseId]);
+  const nextAtLocation = useMemo(
+    () => nextVisibleEclipse(location, new Date()),
+    [location],
+  );
+  const nextTotalAtLocation = useMemo(
+    () => nextLocalTotalEclipse(location, new Date()),
+    [location],
+  );
+  const nearestCentralPath = useMemo(
+    () =>
+      eventPath?.centerline.length
+        ? nearestPointOnPath(
+            [location.longitude, location.latitude],
+            eventPath.centerline,
+          )
+        : undefined,
+    [eventPath, location.latitude, location.longitude],
+  );
   const timeRange = useMemo(
     () => ({
       start: eclipseWindow.start.getTime() - 30 * 60_000,
@@ -213,12 +344,12 @@ export function App() {
     // the second and fourth frames visually collapse into their neighbours.
     const partialCoverage = eclipseWindow.peakObscuration * 100 * 0.45;
     const points =
-      eclipseWindow.totalStart && eclipseWindow.totalEnd
+      eclipseWindow.centralStart && eclipseWindow.centralEnd
         ? [
             { label: "C1", time: start },
-            { label: "C2", time: eclipseWindow.totalStart.getTime() },
+            { label: "C2", time: eclipseWindow.centralStart.getTime() },
             { label: "MAX", time: peak, isPeak: true },
-            { label: "C3", time: eclipseWindow.totalEnd.getTime() },
+            { label: "C3", time: eclipseWindow.centralEnd.getTime() },
             { label: "C4", time: end },
           ]
         : [
@@ -258,8 +389,12 @@ export function App() {
       };
     });
   }, [eclipseWindow, location]);
-  const isTotalLocation =
-    !!eclipseWindow.totalStart && !!eclipseWindow.totalEnd;
+  const centralDurationSeconds =
+    eclipseWindow.centralStart && eclipseWindow.centralEnd
+      ? (eclipseWindow.centralEnd.getTime() -
+          eclipseWindow.centralStart.getTime()) /
+        1000
+      : undefined;
   const description = `${mode === "sky" ? "Sky view" : "Magnified close-up"}. ${eventLabel(state)}. Sun altitude ${Math.round(state.sun.altitudeDeg)} degrees, azimuth ${Math.round(state.sun.azimuthDeg)} degrees.`;
 
   useEffect(() => {
@@ -305,6 +440,17 @@ export function App() {
   useEffect(() => {
     try {
       localStorage.setItem(
+        SELECTED_ECLIPSE_STORAGE_KEY,
+        serializeStoredEclipseId(selectedEclipseId),
+      );
+    } catch {
+      // Selection persistence is optional.
+    }
+  }, [selectedEclipseId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
         ALERTS_STORAGE_KEY,
         serializeAlertPreferences(alertPreferences),
       );
@@ -336,11 +482,14 @@ export function App() {
         const delay = alert.notifyAt.getTime() - Date.now();
         if (delay <= 0) {
           try {
-            new Notification(`Eclipse/26 · ${alert.label}`, {
-              body: alertBody(alert, location, alertPreferences.leadMinutes),
-              icon: "./apple-touch-icon.png",
-              tag: `eclipse26-${alert.key}`,
-            });
+            new Notification(
+              `Solar eclipse ${selectedEclipseId} · ${alert.label}`,
+              {
+                body: alertBody(alert, location, alertPreferences.leadMinutes),
+                icon: "./apple-touch-icon.png",
+                tag: `solar-eclipse-${selectedEclipseId}-${alert.key}`,
+              },
+            );
           } catch {
             // Some mobile browsers expose permission without a constructible API.
           }
@@ -353,9 +502,16 @@ export function App() {
 
     buildAlertSchedule(eclipseWindow, alertPreferences).forEach(schedule);
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [alertPreferences, eclipseWindow, location]);
+  }, [alertPreferences, eclipseWindow, location, selectedEclipseId]);
 
   const openPath = () => {
+    if (selectedEclipseId !== DEFAULT_ECLIPSE_ID) {
+      document
+        .querySelector("#event-map")
+        ?.scrollIntoView({ behavior: "smooth" });
+      setAnnouncement("Event map selected.");
+      return;
+    }
     pathReturnRef.current = { nowMs, isPlaying };
     const reducedMotion = window.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
@@ -381,9 +537,13 @@ export function App() {
   };
 
   const applyLocation = (next: ObserverLocation) => {
-    const nextWindow = eclipseWindowFor(next);
+    const nextResult = localEclipseFor(selectedEclipseId, next);
     setLocation(next);
-    setNowMs(nextWindow.peak.getTime());
+    setNowMs(
+      nextResult.visible
+        ? nextResult.window.peak.getTime()
+        : new Date(nextResult.record.peakUtc).getTime(),
+    );
     setIsPlaying(false);
     setShowLocation(false);
     setAnnouncement(
@@ -394,10 +554,43 @@ export function App() {
     );
   };
 
+  const applyMapCoordinates = (latitude: number, longitude: number) => {
+    const coordinateLocation: ObserverLocation = {
+      ...location,
+      latitude,
+      longitude,
+      elevationMeters: 0,
+      label: `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`,
+      source: "coordinates",
+    };
+    void timezoneAt(latitude, longitude)
+      .then((timezone) => applyLocation({ ...coordinateLocation, timezone }))
+      .catch(() => applyLocation(coordinateLocation));
+  };
+
+  const copyCoordinates = (
+    latitude: number,
+    longitude: number,
+    label: string,
+  ) => {
+    void navigator.clipboard
+      .writeText(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
+      .then(() => setAnnouncement(`${label} coordinates copied.`))
+      .catch(() =>
+        setAnnouncement(
+          `${label} coordinates are ${latitude.toFixed(5)}, ${longitude.toFixed(5)}.`,
+        ),
+      );
+  };
+
   const updateAlignmentLocation = (next: ObserverLocation) => {
-    const nextWindow = eclipseWindowFor(next);
+    const nextResult = localEclipseFor(selectedEclipseId, next);
     setLocation(next);
-    setNowMs(nextWindow.peak.getTime());
+    setNowMs(
+      nextResult.visible
+        ? nextResult.window.peak.getTime()
+        : new Date(nextResult.record.peakUtc).getTime(),
+    );
     setIsPlaying(false);
     setAnnouncement(
       `Phone location refreshed. Maximum eclipse recalculated for ${next.label}.`,
@@ -414,6 +607,31 @@ export function App() {
     requestAnimationFrame(() =>
       (locationReturnRef.current ?? locationButtonRef.current)?.focus(),
     );
+  };
+
+  const selectEclipse = (id: EclipseId, view: AppView = "event") => {
+    const result = localEclipseFor(id, location);
+    setSelectedEclipseId(id);
+    setAppView(view);
+    setNowMs(
+      result.visible
+        ? result.window.peak.getTime()
+        : new Date(result.record.peakUtc).getTime(),
+    );
+    setIsPlaying(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", "2");
+    url.searchParams.set("eclipse", id);
+    if (view === "next") url.searchParams.delete("view");
+    else url.searchParams.set("view", view);
+    window.history.replaceState(null, "", url);
+    setAnnouncement(`${id} eclipse selected.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const showNext = () => {
+    if (nextAtLocation) selectEclipse(nextAtLocation.eventId, "next");
+    else setAppView("next");
   };
 
   const selectTime = (time: number) => {
@@ -465,6 +683,7 @@ export function App() {
       location,
       selectedDate,
       mode,
+      selectedEclipseId,
     );
     const model: ShareCardModel = {
       state,
@@ -545,7 +764,7 @@ export function App() {
     const text = `${location.label}: ${covered}% of the Sun covered at ${selectedTime}. Open the interactive view.`;
     try {
       await navigator.share({
-        title: `Eclipse/26 · ${location.label}`,
+        title: `Solar eclipse ${selectedEclipseId} · ${location.label}`,
         text,
         url: shareUrl,
         ...(canShareImage && shareAsset ? { files: [shareAsset.file] } : {}),
@@ -589,307 +808,558 @@ export function App() {
         Skip to simulator
       </a>
       <header className="topbar">
-        <a className="brand" href="./" aria-label="Eclipse 26 home">
+        <button
+          className="brand brand-button"
+          aria-label="Eclipse Companion home"
+          onClick={showNext}
+        >
           <span className="brand-mark">◐</span>
           <span>
-            ECLIPSE<span>/</span>26
+            ECLIPSE<span>/</span>COMPANION
           </span>
-        </a>
-        <div className="topbar-actions">
-          <span className="event-date">12 AUGUST 2026</span>
-          <a className="live-nav-link" href="#live">
-            <i aria-hidden="true" /> Live view
-          </a>
+        </button>
+        <nav className="primary-nav" aria-label="Primary navigation">
           <button
-            ref={shareButtonRef}
-            className="secondary-button"
-            data-testid="share-view"
-            onClick={handleShare}
+            type="button"
+            aria-current={appView === "next" ? "page" : undefined}
+            onClick={showNext}
           >
-            Share view ↗
+            Next
           </button>
+          <button
+            type="button"
+            aria-current={appView === "catalog" ? "page" : undefined}
+            onClick={() => {
+              setAppView("catalog");
+              const url = new URL(window.location.href);
+              url.searchParams.set("view", "catalog");
+              window.history.replaceState(null, "", url);
+            }}
+          >
+            Eclipses
+          </button>
+          <button
+            type="button"
+            aria-current={appView === "event" ? "page" : undefined}
+            onClick={() => selectEclipse(selectedEclipseId, "event")}
+          >
+            Event
+          </button>
+        </nav>
+        <div className="topbar-actions">
+          <span className="event-date">{selectedEclipseId}</span>
+          {appView !== "catalog" && eclipseResult.visible && (
+            <>
+              <a className="live-nav-link" href="#live">
+                <i aria-hidden="true" /> Live view
+              </a>
+              <button
+                ref={shareButtonRef}
+                className="secondary-button"
+                data-testid="share-view"
+                onClick={handleShare}
+                title="Share this local eclipse view"
+              >
+                Share view ↗
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      <main>
-        <section className="hero">
-          <div className="hero-copy">
-            <p className="eyebrow">
-              <span />
-              Interactive eclipse preview
-            </p>
-            <h1>
-              See the <em>shadow</em> arrive.
-            </h1>
-            <p className="lede">
-              Explore how the Moon crosses the Sun from your sky. Choose a
-              place, move through the event, and know exactly where to look.
-            </p>
-            <a className="hero-live-cta" href="#live">
-              <i aria-hidden="true" /> Open the eclipse-day live view
-              <span aria-hidden="true">↓</span>
-            </a>
-            <button
-              ref={locationButtonRef}
-              className="location-chip"
-              data-testid="location-picker"
-              aria-haspopup="dialog"
-              onClick={(event) => openLocation(event.currentTarget)}
-            >
-              <span className="pin">⌖</span>
-              <span>
-                <small>VIEWING FROM</small>
-                <strong>{location.label}</strong>
+      {appView === "catalog" ? (
+        <main>
+          <EclipseCatalog
+            records={ECLIPSE_CATALOG}
+            selectedId={selectedEclipseId}
+            location={location}
+            onSelect={(id) => selectEclipse(id, "event")}
+          />
+        </main>
+      ) : (
+        <main
+          className={`event-page ${eclipseResult.visible ? "" : "not-visible"}`}
+        >
+          <section className="event-context-bar" aria-label="Selected eclipse">
+            <div>
+              <span className={`eclipse-type type-${selectedRecord.type}`}>
+                {selectedRecord.type}
               </span>
-              <span aria-hidden="true">Change</span>
-            </button>
-            <dl className="hero-stats">
+              <strong>
+                {new Intl.DateTimeFormat(undefined, {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  timeZone: "UTC",
+                }).format(new Date(`${selectedRecord.id}T12:00:00Z`))}
+              </strong>
+              <small>
+                Magnitude {selectedRecord.magnitude.toFixed(4)} · Saros{" "}
+                {selectedRecord.saros}
+              </small>
+            </div>
+            <div>
+              <a href="#overview">Overview</a>
+              <a href="#event-map">Map</a>
+              <a href="#simulator">Simulation</a>
+              <a href="#circumstances">Circumstances</a>
+              <a href="#prepare">Prepare</a>
+            </div>
+          </section>
+
+          {!eclipseResult.visible && (
+            <section className="event-unavailable" id="overview">
               <div>
-                <dt>Local maximum</dt>
-                <dd>{peakTime}</dd>
-                <dd className="stat-note">
-                  {timezoneName(location.timezone, eclipseWindow.peak)}
-                </dd>
+                <span className="kicker">NOT VISIBLE FROM THIS LOCATION</span>
+                <h1>This shadow passes elsewhere.</h1>
+                <p>
+                  The {selectedRecord.type} eclipse on {selectedRecord.id} does
+                  not reach {location.label}. Explore its global map, choose
+                  another place, or return to the next eclipse visible from your
+                  sky.
+                </p>
+                <div className="event-unavailable-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={showNext}
+                  >
+                    Show my next eclipse
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={(event) => openLocation(event.currentTarget)}
+                  >
+                    Change location
+                  </button>
+                </div>
               </div>
-              <div>
-                <dt>Totality here</dt>
-                <dd>{formatDuration(eclipseWindow.totalityDurationSeconds)}</dd>
-                <dd className="stat-note">
-                  {isTotalLocation
-                    ? "Calculated C2–C3"
-                    : `${Math.round(eclipseWindow.peakObscuration * 100)}% at maximum`}
-                </dd>
+              <dl>
+                <div>
+                  <dt>Greatest eclipse</dt>
+                  <dd>
+                    {selectedRecord.greatestPoint.latitude.toFixed(1)}°,{" "}
+                    {selectedRecord.greatestPoint.longitude.toFixed(1)}°
+                  </dd>
+                </div>
+                <div>
+                  <dt>Maximum duration</dt>
+                  <dd>
+                    {formatDuration(selectedRecord.maximumDurationSeconds)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Next total here</dt>
+                  <dd>
+                    {nextTotalAtLocation?.eventId ?? "Beyond this catalog"}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          )}
+
+          <section className="hero" id="overview">
+            <div className="hero-copy">
+              <p className="eyebrow">
+                <span />
+                {appView === "next"
+                  ? "Next eclipse from your sky"
+                  : `${selectedRecord.type} eclipse workspace`}
+              </p>
+              <h1>
+                See the{" "}
+                <em>{selectedRecord.type === "annular" ? "ring" : "shadow"}</em>{" "}
+                arrive.
+              </h1>
+              <p className="lede">
+                Explore how the Moon crosses the Sun from your sky. Choose a
+                place, move through the event, and know exactly where to look.
+              </p>
+              <a className="hero-live-cta" href="#live">
+                <i aria-hidden="true" /> Open the eclipse-day live view
+                <span aria-hidden="true">↓</span>
+              </a>
+              <button
+                ref={locationButtonRef}
+                className="location-chip"
+                data-testid="location-picker"
+                aria-haspopup="dialog"
+                onClick={(event) => openLocation(event.currentTarget)}
+              >
+                <span className="pin">⌖</span>
+                <span>
+                  <small>VIEWING FROM</small>
+                  <strong>{location.label}</strong>
+                </span>
+                <span aria-hidden="true">Change</span>
+              </button>
+              <dl className="hero-stats">
+                <div>
+                  <dt>Local maximum</dt>
+                  <dd>{peakTime}</dd>
+                  <dd className="stat-note">
+                    {timezoneName(location.timezone, eclipseWindow.peak)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {eclipseWindow.localType === "annular"
+                      ? "Annularity here"
+                      : "Totality here"}
+                  </dt>
+                  <dd>{formatDuration(centralDurationSeconds)}</dd>
+                  <dd className="stat-note">
+                    {eclipseWindow.centralStart
+                      ? `Calculated ${eclipseWindow.localType} phase`
+                      : `${Math.round(eclipseWindow.peakObscuration * 100)}% at maximum`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Next total here</dt>
+                  <dd>{nextTotalAtLocation?.eventId ?? "Beyond 2135"}</dd>
+                  <dd className="stat-note">For {location.label}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <section
+              className="simulator"
+              id="simulator"
+              aria-labelledby="simulator-title"
+            >
+              <header className="simulator-header">
+                <div>
+                  <span className="kicker">AT SELECTED TIME · {zoneName}</span>
+                  <h2 id="simulator-title">{eventLabel(state)}</h2>
+                  <p>{selectedTime}</p>
+                </div>
+                <div className="mode-switch" aria-label="Simulator view">
+                  <button
+                    aria-pressed={mode === "sky"}
+                    data-testid="mode-sky"
+                    onClick={() => {
+                      setMode("sky");
+                      setAnnouncement("Sky view selected.");
+                    }}
+                  >
+                    Sky
+                  </button>
+                  <button
+                    aria-pressed={mode === "closeup"}
+                    data-testid="mode-closeup"
+                    onClick={() => {
+                      setMode("closeup");
+                      setAnnouncement("Magnified close-up selected.");
+                    }}
+                  >
+                    Close-up
+                  </button>
+                </div>
+              </header>
+              <div className="sky-frame">
+                <SkyCanvas
+                  state={state}
+                  mode={mode}
+                  description={description}
+                  showGolfHole={location.label === GOLF_LOCATION_LABEL}
+                />
+                <div className="scale-note">
+                  {mode === "closeup"
+                    ? "Magnified equally · overlap remains accurate"
+                    : "Disks enlarged equally · altitude and bearing are true"}
+                </div>
+                <DirectionCompass sun={state.sun} moon={state.moon} />
+                <div className="sky-readout">
+                  <span>
+                    Sun{" "}
+                    <strong>
+                      {Math.round(state.sun.altitudeDeg)}° altitude
+                    </strong>
+                  </span>
+                  <span>
+                    Bearing{" "}
+                    <strong>
+                      {Math.round(state.sun.azimuthDeg)}° {sunDirection}
+                    </strong>
+                  </span>
+                  <span>
+                    Covered{" "}
+                    <strong>
+                      {Math.round(state.eclipse.obscurationPercent)}%
+                    </strong>
+                  </span>
+                </div>
               </div>
-            </dl>
-          </div>
+              <Timeline
+                window={eclipseWindow}
+                nowMs={nowMs}
+                isPlaying={isPlaying}
+                speed={speed}
+                formatTime={(date) => localDateTime(date, location.timezone)}
+                onTimeChange={selectTime}
+                onPlayingChange={changePlaying}
+                onSpeedChange={(value) => {
+                  setSpeed(value);
+                  setAnnouncement(`Playback speed set to ${value} times.`);
+                }}
+              />
+            </section>
+          </section>
 
           <section
-            className="simulator"
-            id="simulator"
-            aria-labelledby="simulator-title"
+            className="event-map-workspace"
+            id="event-map"
+            aria-labelledby="event-map-title"
           >
-            <header className="simulator-header">
-              <div>
-                <span className="kicker">AT SELECTED TIME · {zoneName}</span>
-                <h2 id="simulator-title">{eventLabel(state)}</h2>
-                <p>{selectedTime}</p>
-              </div>
-              <div className="mode-switch" aria-label="Simulator view">
-                <button
-                  aria-pressed={mode === "sky"}
-                  data-testid="mode-sky"
-                  onClick={() => {
-                    setMode("sky");
-                    setAnnouncement("Sky view selected.");
-                  }}
-                >
-                  Sky
-                </button>
-                <button
-                  aria-pressed={mode === "closeup"}
-                  data-testid="mode-closeup"
-                  onClick={() => {
-                    setMode("closeup");
-                    setAnnouncement("Magnified close-up selected.");
-                  }}
-                >
-                  Close-up
-                </button>
-              </div>
+            <header>
+              <span className="kicker">LOCATION & PATH</span>
+              <h2 id="event-map-title">Choose your observing point.</h2>
+              <p>
+                The bundled overview works immediately. Online roads and terrain
+                load only with your permission.
+              </p>
             </header>
-            <div className="sky-frame">
-              <SkyCanvas
-                state={state}
-                mode={mode}
-                description={description}
-                showGolfHole={location.label === GOLF_LOCATION_LABEL}
+            {eventPath && nearestCentralPath && (
+              <div className="event-map-facts">
+                <div>
+                  <small>Closest centerline</small>
+                  <strong>
+                    {Math.round(nearestCentralPath.distanceKm)} km away
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyCoordinates(
+                        nearestCentralPath.coordinate[1],
+                        nearestCentralPath.coordinate[0],
+                        "Closest centerline",
+                      )
+                    }
+                  >
+                    Copy {nearestCentralPath.coordinate[1].toFixed(3)}°,{" "}
+                    {nearestCentralPath.coordinate[0].toFixed(3)}°
+                  </button>
+                </div>
+                <div>
+                  <small>Greatest eclipse</small>
+                  <strong>
+                    {selectedRecord.greatestPoint.latitude.toFixed(2)}°,{" "}
+                    {selectedRecord.greatestPoint.longitude.toFixed(2)}°
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyCoordinates(
+                        selectedRecord.greatestPoint.latitude,
+                        selectedRecord.greatestPoint.longitude,
+                        "Greatest eclipse",
+                      )
+                    }
+                  >
+                    Copy coordinates
+                  </button>
+                </div>
+                <div>
+                  <small>Global maximum</small>
+                  <strong>
+                    {formatDuration(selectedRecord.maximumDurationSeconds)}
+                  </strong>
+                  <a
+                    href={eventPath.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    NASA path source ↗
+                  </a>
+                </div>
+              </div>
+            )}
+            <div className="event-overview-map">
+              <EclipseMap
+                location={location}
+                event={selectedRecord}
+                path={eventPath ?? undefined}
+                compact
               />
-              <div className="scale-note">
-                {mode === "closeup"
-                  ? "Magnified equally · overlap remains accurate"
-                  : "Disks enlarged equally · altitude and bearing are true"}
-              </div>
-              <DirectionCompass sun={state.sun} moon={state.moon} />
-              <div className="sky-readout">
-                <span>
-                  Sun{" "}
-                  <strong>{Math.round(state.sun.altitudeDeg)}° altitude</strong>
-                </span>
-                <span>
-                  Bearing{" "}
-                  <strong>
-                    {Math.round(state.sun.azimuthDeg)}° {sunDirection}
-                  </strong>
-                </span>
-                <span>
-                  Covered{" "}
-                  <strong>
-                    {Math.round(state.eclipse.obscurationPercent)}%
-                  </strong>
-                </span>
-              </div>
             </div>
-            <Timeline
-              window={eclipseWindow}
-              nowMs={nowMs}
-              isPlaying={isPlaying}
-              speed={speed}
-              formatTime={(date) => localDateTime(date, location.timezone)}
-              onTimeChange={selectTime}
-              onPlayingChange={changePlaying}
-              onSpeedChange={(value) => {
-                setSpeed(value);
-                setAnnouncement(`Playback speed set to ${value} times.`);
-              }}
+            <DetailedMap
+              event={selectedRecord}
+              path={eventPath ?? undefined}
+              location={location}
+              onSelect={applyMapCoordinates}
             />
           </section>
-        </section>
 
-        <LiveView
-          location={location}
-          window={eclipseWindow}
-          now={new Date(liveNowMs)}
-          formatTime={(date, full) =>
-            localDateTime(date, location.timezone, full)
-          }
-          zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
-          onChangeLocation={openLocation}
-          onPreviewTime={previewFromLive}
-          onOpenSkyGuide={(opener) => {
-            alignmentReturnRef.current = opener;
-            setShowAlignment(true);
-            setAnnouncement("All-sphere sky guide opened.");
-          }}
-          alertsEnabled={
-            alertPreferences.enabled &&
-            "Notification" in window &&
-            Notification.permission === "granted"
-          }
-          onConfigureAlerts={(opener) => {
-            notificationReturnRef.current = opener;
-            setShowNotifications(true);
-            setAnnouncement("Eclipse alert setup opened.");
-          }}
-        />
+          <LiveView
+            location={location}
+            window={eclipseWindow}
+            now={new Date(liveNowMs)}
+            formatTime={(date, full) =>
+              localDateTime(date, location.timezone, full)
+            }
+            zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
+            onChangeLocation={openLocation}
+            onPreviewTime={previewFromLive}
+            onOpenSkyGuide={(opener) => {
+              alignmentReturnRef.current = opener;
+              setShowAlignment(true);
+              setAnnouncement("All-sphere sky guide opened.");
+            }}
+            alertsEnabled={
+              alertPreferences.enabled &&
+              isEventArmed(alertPreferences, selectedEclipseId) &&
+              "Notification" in window &&
+              Notification.permission === "granted"
+            }
+            onConfigureAlerts={(opener) => {
+              notificationReturnRef.current = opener;
+              setShowNotifications(true);
+              setAnnouncement("Eclipse alert setup opened.");
+            }}
+          />
 
-        <section className="insight-grid" aria-label="Local eclipse details">
-          <article className="info-card circumstances-card">
-            <header>
-              <span className="kicker">LOCAL CIRCUMSTANCES</span>
-              <span
-                className={`status-pill ${state.eclipse.visible ? "active" : ""}`}
-              >
-                AT SELECTED TIME
-              </span>
-            </header>
-            <div className="contact-grid">
-              <div>
-                <small>C1 · PARTIAL START</small>
-                <strong>
-                  {localDateTime(eclipseWindow.start, location.timezone)}
-                </strong>
-              </div>
-              {eclipseWindow.totalStart && (
+          <section className="insight-grid" aria-label="Local eclipse details">
+            <article className="info-card circumstances-card">
+              <header>
+                <span className="kicker">LOCAL CIRCUMSTANCES</span>
+                <span
+                  className={`status-pill ${state.eclipse.visible ? "active" : ""}`}
+                >
+                  AT SELECTED TIME
+                </span>
+              </header>
+              <div className="contact-grid">
                 <div>
-                  <small>C2 · TOTALITY START</small>
+                  <small>C1 · PARTIAL START</small>
                   <strong>
-                    {localDateTime(eclipseWindow.totalStart, location.timezone)}
+                    {localDateTime(eclipseWindow.start, location.timezone)}
                   </strong>
                 </div>
-              )}
-              <div>
-                <small>MAXIMUM</small>
-                <strong>{peakTime}</strong>
-              </div>
-              {eclipseWindow.totalEnd && (
+                {eclipseWindow.centralStart && (
+                  <div>
+                    <small>
+                      C2 ·{" "}
+                      {eclipseWindow.localType === "annular"
+                        ? "ANNULARITY"
+                        : "TOTALITY"}{" "}
+                      START
+                    </small>
+                    <strong>
+                      {localDateTime(
+                        eclipseWindow.centralStart,
+                        location.timezone,
+                      )}
+                    </strong>
+                  </div>
+                )}
                 <div>
-                  <small>C3 · TOTALITY END</small>
+                  <small>MAXIMUM</small>
+                  <strong>{peakTime}</strong>
+                </div>
+                {eclipseWindow.centralEnd && (
+                  <div>
+                    <small>
+                      C3 ·{" "}
+                      {eclipseWindow.localType === "annular"
+                        ? "ANNULARITY"
+                        : "TOTALITY"}{" "}
+                      END
+                    </small>
+                    <strong>
+                      {localDateTime(
+                        eclipseWindow.centralEnd,
+                        location.timezone,
+                      )}
+                    </strong>
+                  </div>
+                )}
+                <div>
+                  <small>C4 · PARTIAL END</small>
                   <strong>
-                    {localDateTime(eclipseWindow.totalEnd, location.timezone)}
+                    {localDateTime(eclipseWindow.end, location.timezone)}
                   </strong>
                 </div>
-              )}
-              <div>
-                <small>C4 · PARTIAL END</small>
-                <strong>
-                  {localDateTime(eclipseWindow.end, location.timezone)}
-                </strong>
               </div>
-            </div>
-            <p>
-              At maximum, {Math.round(eclipseWindow.peakObscuration * 100)}% of
-              the Sun is covered. At the selected time, the Sun is{" "}
-              {state.sun.altitudeDeg > -0.833
-                ? `${Math.round(state.sun.altitudeDeg)}° above the horizon toward ${sunDirection}`
-                : "below your horizon"}
-              .
-            </p>
-          </article>
-          <article className="info-card safety-card">
-            <span className="card-icon" aria-hidden="true">
-              ✺
-            </span>
-            <div>
-              <span className="kicker">LOOK AFTER YOUR EYES</span>
-              <h3>
-                {state.eclipse.type === "total"
-                  ? "Totality at the selected time."
-                  : "Use certified eclipse glasses."}
-              </h3>
               <p>
-                {state.eclipse.type === "total"
-                  ? "Only during the brief total phase, when no bright photosphere is visible, may viewers look without eclipse glasses."
-                  : "Keep ISO 12312-2 compliant viewers on during every partial phase. Ordinary sunglasses are not safe."}
+                At maximum, {Math.round(eclipseWindow.peakObscuration * 100)}%
+                of the Sun is covered. At the selected time, the Sun is{" "}
+                {state.sun.altitudeDeg > -0.833
+                  ? `${Math.round(state.sun.altitudeDeg)}° above the horizon toward ${sunDirection}`
+                  : "below your horizon"}
+                .
               </p>
-              <a
-                href="https://science.nasa.gov/eclipses/safety/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Read NASA safety guidance ↗
-              </a>
-            </div>
-          </article>
-          <button
-            ref={pathButtonRef}
-            className="info-card path-card"
-            data-testid="open-map"
-            onClick={openPath}
-          >
-            <span className="path-art" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span>
-              <span className="kicker">THE VERIFIED PATH</span>
-              <strong>From the Arctic to Spain.</strong>
-              <small>
-                Explore the totality limits, centerline, UTC timing, and your
-                selected place.
-              </small>
-            </span>
-            <b aria-hidden="true">↗</b>
-          </button>
-        </section>
+            </article>
+            <article className="info-card safety-card">
+              <span className="card-icon" aria-hidden="true">
+                ✺
+              </span>
+              <div>
+                <span className="kicker">LOOK AFTER YOUR EYES</span>
+                <h3>
+                  {state.eclipse.type === "total"
+                    ? "Totality at the selected time."
+                    : "Use certified eclipse glasses."}
+                </h3>
+                <p>
+                  {state.eclipse.type === "total"
+                    ? "Only during the brief total phase, when no bright photosphere is visible, may viewers look without eclipse glasses."
+                    : "Keep ISO 12312-2 compliant viewers on during every partial phase. Ordinary sunglasses are not safe."}
+                </p>
+                <a
+                  href="https://science.nasa.gov/eclipses/safety/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Read NASA safety guidance ↗
+                </a>
+              </div>
+            </article>
+            <button
+              ref={pathButtonRef}
+              className="info-card path-card"
+              data-testid="open-map"
+              onClick={openPath}
+            >
+              <span className="path-art" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>
+                <span className="kicker">THE VERIFIED PATH</span>
+                <strong>
+                  {selectedEclipseId === DEFAULT_ECLIPSE_ID
+                    ? "From the Arctic to Spain."
+                    : `Global ${selectedRecord.type} eclipse.`}
+                </strong>
+                <small>
+                  Explore the totality limits, centerline, UTC timing, and your
+                  selected place.
+                </small>
+              </span>
+              <b aria-hidden="true">↗</b>
+            </button>
+          </section>
 
-        <details className="method-card">
-          <summary>How this preview works</summary>
-          <div>
-            <p>
-              Sun and Moon positions and local contacts are calculated in your
-              browser with Astronomy Engine. The close-up scales both disks and
-              their separation together, preserving the visible overlap.
-            </p>
-            <p>
-              Times use your selected IANA time zone. Terrain, clouds,
-              atmospheric transparency, and the Moon’s detailed limb profile are
-              not modeled, so this is a planning preview rather than navigation
-              or safety equipment.
-            </p>
-          </div>
-        </details>
-      </main>
+          <details className="method-card">
+            <summary>How this preview works</summary>
+            <div>
+              <p>
+                Sun and Moon positions and local contacts are calculated in your
+                browser with Astronomy Engine. The close-up scales both disks
+                and their separation together, preserving the visible overlap.
+              </p>
+              <p>
+                Times use your selected IANA time zone. Terrain, clouds,
+                atmospheric transparency, and the Moon’s detailed limb profile
+                are not modeled, so this is a planning preview rather than
+                navigation or safety equipment.
+              </p>
+            </div>
+          </details>
+        </main>
+      )}
 
       <footer className="footer">
         <span>Calculated locally · no analytics · no location uploads</span>
@@ -919,6 +1389,8 @@ export function App() {
       {showLocation && (
         <LocationDialog
           current={location}
+          event={selectedRecord}
+          path={eventPath ?? undefined}
           onConfirm={applyLocation}
           onClose={closeLocation}
         />
@@ -946,6 +1418,7 @@ export function App() {
       {showAlignment && (
         <PhoneAlignmentDialog
           location={location}
+          eclipseWindow={eclipseWindow}
           now={new Date(liveNowMs)}
           formatTime={(date, full) =>
             localDateTime(date, location.timezone, full)
@@ -985,7 +1458,7 @@ export function App() {
         <ShareDialog
           url={shareUrl}
           previewUrl={shareAsset?.previewUrl ?? ""}
-          previewAlt={`Personalized Eclipse/26 card for ${location.label}: ${eventLabel(state)}, ${selectedTime} ${zoneName}.`}
+          previewAlt={`Personalized solar eclipse card for ${location.label}: ${eventLabel(state)}, ${selectedTime} ${zoneName}.`}
           isLoading={shareLoading}
           error={shareError}
           status={shareStatus}

@@ -5,9 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("./");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: /see the shadow arrive/i }),
-  ).toBeVisible();
+  await expect(page.getByTestId("location-picker")).toBeVisible();
 });
 
 test("@smoke runs without cross-origin requests or console errors", async ({
@@ -27,6 +25,168 @@ test("@smoke runs without cross-origin requests or console errors", async ({
   await expect(page.getByTestId("location-map")).toBeVisible();
   expect(errors).toEqual([]);
   expect(external).toEqual([]);
+});
+
+test("loads only allowlisted map providers after explicit opt-in", async ({
+  page,
+}) => {
+  const transparentTile = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xw4AAAAASUVORK5CYII=",
+    "base64",
+  );
+  const external: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.origin !== "http://127.0.0.1:4173") external.push(url.hostname);
+  });
+  await page.route("https://**.basemaps.cartocdn.com/**", (route) =>
+    route.fulfill({ contentType: "image/png", body: transparentTile }),
+  );
+  await page.route("https://server.arcgisonline.com/**", (route) =>
+    route.fulfill({ contentType: "image/png", body: transparentTile }),
+  );
+
+  expect(external).toEqual([]);
+  await page.getByRole("button", { name: "Load detailed map" }).click();
+  await expect(page.getByText("Online detail loaded")).toBeVisible();
+  expect(external.length).toBeGreaterThan(0);
+  expect(
+    external.every((host) => host.endsWith(".basemaps.cartocdn.com")),
+  ).toBe(true);
+
+  await page.getByLabel("Terrain hillshade").check();
+  await expect
+    .poll(() => external.includes("server.arcgisonline.com"))
+    .toBe(true);
+  expect(
+    external.every(
+      (host) =>
+        host.endsWith(".basemaps.cartocdn.com") ||
+        host === "server.arcgisonline.com",
+    ),
+  ).toBe(true);
+});
+
+test("keeps a map-selected location when the eclipse changes", async ({
+  page,
+}) => {
+  const transparentTile = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xw4AAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.route("https://**.basemaps.cartocdn.com/**", (route) =>
+    route.fulfill({ contentType: "image/png", body: transparentTile }),
+  );
+
+  await page.getByRole("button", { name: "Load detailed map" }).click();
+  await expect(page.getByText("Online detail loaded")).toBeVisible();
+  const map = page.getByTestId("detailed-map");
+  await map.click({ position: { x: 190, y: 150 } });
+  const coordinateReadout = page.locator(".detailed-map-coordinates");
+  await expect(coordinateReadout).not.toContainText("52.36760");
+  const selectedCoordinates = await coordinateReadout.textContent();
+  expect(selectedCoordinates).toBeTruthy();
+  const selectedLatitude = Number.parseFloat(selectedCoordinates!);
+
+  await page.getByRole("button", { name: "Eclipses" }).click();
+  await page
+    .locator(".eclipse-card")
+    .filter({ hasText: "2026" })
+    .first()
+    .click();
+  await expect
+    .poll(async () =>
+      Number.parseFloat(
+        (
+          await page
+            .getByTestId("location-picker")
+            .locator("strong")
+            .innerText()
+        ).replace("°", ""),
+      ),
+    )
+    .toBeCloseTo(selectedLatitude, 2);
+});
+
+test("lands on the next locally visible eclipse and exposes the century catalog", async ({
+  page,
+}) => {
+  const nextNavigation = page.getByRole("button", {
+    name: "Next",
+    exact: true,
+  });
+  await expect(nextNavigation).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText("Next eclipse from your sky")).toBeVisible();
+  await expect(page.getByText("Next total here").first()).toBeVisible();
+  await expect(page.locator(".event-date")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+
+  await page.getByRole("button", { name: "Eclipses", exact: true }).click();
+  await expect(page).toHaveURL(/view=catalog/);
+  await expect(
+    page.getByRole("heading", { name: "Every shadow ahead." }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/solar eclipses through the next total/i),
+  ).toBeVisible();
+  await expect(page.locator(".eclipse-card")).toHaveCount(30);
+  await expect(
+    page.getByRole("button", { name: "Show 30 more" }),
+  ).toBeVisible();
+});
+
+test("filters the catalog and opens an event-specific workspace", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Eclipses", exact: true }).click();
+  await page.getByLabel("Search date, type, or Saros").fill("2135-10-07");
+  const eclipse = page.locator(".eclipse-card").filter({ hasText: "2135" });
+  await expect(eclipse).toHaveCount(1);
+  await expect(eclipse).toContainText(/total/i);
+  await eclipse.click();
+
+  await expect(page).toHaveURL(/v=2/);
+  await expect(page).toHaveURL(/eclipse=2135-10-07/);
+  await expect(page).toHaveURL(/view=event/);
+  await expect(
+    page.getByRole("button", { name: "Event", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".event-context-bar")).toContainText("2135");
+  await expect(
+    page.getByRole("heading", { name: "Choose your observing point." }),
+  ).toBeVisible();
+});
+
+test("opens a v2 Groningen deep link for the 2135 total eclipse", async ({
+  page,
+}) => {
+  await page.goto(
+    "./?v=2&eclipse=2135-10-07&lat=53.21940&lon=6.56650&tz=Europe%2FAmsterdam&label=Groningen&t=2135-10-07T10%3A00%3A00.000Z&mode=closeup",
+  );
+
+  await expect(page.locator(".event-date")).toHaveText("2135-10-07");
+  await expect(page.getByTestId("location-picker")).toContainText("Groningen");
+  await expect(page.getByTestId("mode-closeup")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("Totality here")).toBeVisible();
+  await expect(page.getByText("NOT VISIBLE FROM THIS LOCATION")).toHaveCount(0);
+});
+
+test("keeps the bundled map and location when online tiles fail", async ({
+  page,
+}) => {
+  await page.route("https://*.basemaps.cartocdn.com/**", (route) =>
+    route.abort("failed"),
+  );
+  const locationLabel = page.getByTestId("location-picker").locator("strong");
+  const locationBefore = await locationLabel.textContent();
+  await page.getByRole("button", { name: "Load detailed map" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Online map tiles could not be loaded",
+  );
+  await expect(locationLabel).toHaveText(locationBefore!);
+  await expect(page.locator(".event-overview-map")).toBeVisible();
 });
 
 test("searches featured places and persists the selection", async ({
@@ -78,8 +238,8 @@ test("reveals the Molenhoek golf easter egg", async ({ page }) => {
 
 test("supports coordinate and time-zone confirmation", async ({ page }) => {
   await page.getByTestId("location-picker").click();
-  await page.getByLabel("Latitude").fill("64.15");
-  await page.getByLabel("Longitude").fill("-21.94");
+  await page.getByRole("spinbutton", { name: "Latitude" }).fill("64.15");
+  await page.getByRole("spinbutton", { name: "Longitude" }).fill("-21.94");
   await page.getByLabel("Time zone").fill("Atlantic/Reykjavik");
   await page.getByTestId("apply-location").click();
   await expect(page.getByTestId("location-picker")).toContainText(/64\.15° N/);
@@ -544,13 +704,16 @@ test("auto-follows the live eclipse while local contacts are in progress", async
 });
 
 test("opens the verified path dialog and restores focus", async ({ page }) => {
+  await page.goto("./?eclipse=2026-08-12");
   const previousTime = await page.getByTestId("eclipse-timeline").inputValue();
   const opener = page.getByTestId("open-map");
   await opener.click();
   await expect(
     page.getByRole("dialog", { name: /where totality travels/i }),
   ).toBeVisible();
-  const map = page.getByTestId("path-map");
+  const map = page
+    .getByRole("dialog", { name: /where totality travels/i })
+    .getByTestId("path-map");
   await expect(map).toBeVisible();
   await expect(map).toHaveAttribute("data-shadow-time", /\d{2}:\d{2}/);
   await expect(page.getByTestId("path-playback")).toHaveAttribute(
@@ -608,7 +771,9 @@ test("previews a personalized card and copies a versioned share URL", async ({
   const sharedUrl = await page.evaluate(
     () => (window as Window & { sharedUrl?: string }).sharedUrl,
   );
-  expect(sharedUrl).toContain("v=1");
+  expect(sharedUrl).toContain("v=2");
+  expect(sharedUrl).toContain("eclipse=");
+  expect(sharedUrl).toContain("t=");
   expect(sharedUrl).toContain("mode=sky");
   await expect(dialog.getByRole("status")).toContainText(/link copied/i);
 });
@@ -631,7 +796,7 @@ test("keeps the exact link selectable when clipboard access fails", async ({
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Copy link" }).click();
   await expect(dialog.getByRole("status")).toContainText(/select the link/i);
-  await expect(page.getByLabel("Share link")).toHaveValue(/v=1/);
+  await expect(page.getByLabel("Share link")).toHaveValue(/v=2/);
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByTestId("share-view")).toBeFocused();
 });
@@ -680,9 +845,9 @@ test("shares the personalized PNG together with the exact deep link", async ({
         }
       ).sharedPayload,
   );
-  expect(payload?.url).toContain("v=1");
+  expect(payload?.url).toContain("v=2");
   expect(payload?.fileName).toMatch(
-    /^eclipse-26-amsterdam-netherlands-.+\.png$/,
+    /^eclipse-\d{4}-\d{2}-\d{2}-amsterdam-netherlands-.+\.png$/,
   );
   expect(payload?.fileType).toBe("image/png");
   expect(Number(payload?.fileSize)).toBeGreaterThan(10_000);
@@ -759,7 +924,9 @@ test("copies and downloads the generated image", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await dialog.getByRole("button", { name: "Download image" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^eclipse-26-.+\.png$/);
+  expect(download.suggestedFilename()).toMatch(
+    /^eclipse-\d{4}-\d{2}-\d{2}-.+\.png$/,
+  );
 });
 
 test("retains link sharing when image generation fails", async ({ page }) => {
@@ -810,7 +977,7 @@ test("renders polished total and partial share-card variants", async ({
   await captureCard("share-card-totality-closeup.png");
 
   await page.evaluate(() => localStorage.clear());
-  await page.goto("./");
+  await page.goto("./?eclipse=2026-08-12");
   await expect(page.getByTestId("location-picker")).toContainText("Amsterdam");
   await captureCard("share-card-partial-sky.png");
   await page.getByTestId("mode-closeup").click();
