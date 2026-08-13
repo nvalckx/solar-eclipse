@@ -257,6 +257,7 @@ export function App() {
   const [speed, setSpeed] = useState(60);
   const [showLocation, setShowLocation] = useState(false);
   const [showPath, setShowPath] = useState(false);
+  const [mapView, setMapView] = useState<"overview" | "detail">("overview");
   const [showAlignment, setShowAlignment] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [alertPreferences, setAlertPreferences] = useState(readSavedAlerts);
@@ -1116,8 +1117,8 @@ export function App() {
               <span className="kicker">LOCATION & PATH</span>
               <h2 id="event-map-title">Choose your observing point.</h2>
               <p>
-                The bundled overview works immediately. Online roads and terrain
-                load only with your permission.
+                Switch between the bundled eclipse overview and an optional
+                detailed map with roads and terrain.
               </p>
             </header>
             {eventPath && nearestCentralPath && (
@@ -1175,20 +1176,59 @@ export function App() {
                 </div>
               </div>
             )}
-            <div className="event-overview-map">
-              <EclipseMap
-                location={location}
-                event={selectedRecord}
-                path={eventPath ?? undefined}
-                compact
-              />
+            <div
+              className="map-view-switcher"
+              role="group"
+              aria-label="Map view"
+              data-testid="map-view-toggle"
+            >
+              <span className="map-view-switcher-label">Map view</span>
+              <div className="map-view-switcher-controls">
+                <button
+                  type="button"
+                  aria-pressed={mapView === "overview"}
+                  data-testid="map-view-overview"
+                  onClick={() => {
+                    setMapView("overview");
+                    setAnnouncement("Overview map selected.");
+                  }}
+                >
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={mapView === "detail"}
+                  data-testid="map-view-detail"
+                  onClick={() => {
+                    setMapView("detail");
+                    setAnnouncement("Detailed map selected.");
+                  }}
+                >
+                  Detailed
+                </button>
+              </div>
             </div>
-            <DetailedMap
-              event={selectedRecord}
-              path={eventPath ?? undefined}
-              location={location}
-              onSelect={applyMapCoordinates}
-            />
+            <div className="map-view-stage">
+              <div hidden={mapView !== "overview"}>
+                <div className="event-overview-map">
+                  <EclipseMap
+                    location={location}
+                    event={selectedRecord}
+                    path={eventPath ?? undefined}
+                    compact
+                  />
+                </div>
+              </div>
+              <div hidden={mapView !== "detail"}>
+                <DetailedMap
+                  event={selectedRecord}
+                  path={eventPath ?? undefined}
+                  location={location}
+                  onSelect={applyMapCoordinates}
+                  active={mapView === "detail"}
+                />
+              </div>
+            </div>
           </section>
 
           <LiveView

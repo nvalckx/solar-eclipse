@@ -472,6 +472,50 @@ main {
   border: 1px solid var(--line);
   border-radius: 13px;
 }
+.map-view-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(4, 14, 25, 0.72);
+}
+.map-view-switcher-label {
+  padding-left: 8px;
+  color: var(--muted);
+  font: 700 10px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.map-view-switcher-controls {
+  display: flex;
+  gap: 4px;
+}
+.map-view-switcher button {
+  min-height: 34px;
+  padding: 6px 13px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: 700 10px var(--mono);
+}
+.map-view-switcher button:hover,
+.map-view-switcher button:focus-visible {
+  border-color: rgba(255, 147, 102, 0.6);
+  color: var(--orange-bright);
+}
+.map-view-switcher button[aria-pressed="true"] {
+  border-color: var(--orange-bright);
+  background: var(--orange);
+  color: #07101c;
+}
+.map-view-stage > [hidden] {
+  display: none;
+}
 .map-greatest circle {
   fill: #07101c;
   stroke: #ffe29c;

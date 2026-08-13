@@ -19,6 +19,7 @@ type Props = {
   path?: EclipsePathData;
   location: ObserverLocation;
   onSelect: (latitude: number, longitude: number) => void;
+  active?: boolean;
   className?: string;
 };
 
@@ -150,6 +151,7 @@ export function DetailedMap({
   path,
   location,
   onSelect,
+  active = true,
   className,
 }: Props) {
   const helpId = useId();
@@ -282,6 +284,13 @@ export function DetailedMap({
     if (!marker) return;
     marker.setLatLng([location.latitude, location.longitude]);
   }, [location.latitude, location.longitude]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !active) return;
+    const frame = requestAnimationFrame(() => map.invalidateSize());
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
 
   useEffect(() => {
     const leaflet = leafletRef.current;

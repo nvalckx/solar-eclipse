@@ -225,12 +225,27 @@
 }
 
 .detailed-map-panel .leaflet-control-attribution {
-  background: rgba(15, 16, 22, 0.82);
-  color: rgba(247, 243, 232, 0.68);
+  max-width: calc(100% - 1rem);
+  padding: 0.28rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0.55rem 0 0 0;
+  background: rgba(5, 12, 20, 0.78);
+  color: rgba(235, 242, 248, 0.58);
+  font: 500 0.65rem/1.35 var(--mono);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -0.3rem 1rem rgba(0, 0, 0, 0.16);
 }
 
 .detailed-map-panel .leaflet-control-attribution a {
+  color: rgba(235, 242, 248, 0.74);
+  text-decoration: none;
+}
+
+.detailed-map-panel .leaflet-control-attribution a:hover {
   color: #ffe093;
+  text-decoration: underline;
 }
 
 .detailed-map-panel .leaflet-tooltip {
