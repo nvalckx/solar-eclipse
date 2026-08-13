@@ -1,8 +1,8 @@
 # Eclipse Companion 2026–2135
 
-A private, location-aware companion for every solar eclipse from August 12, 2026 through October 7, 2135—the next total eclipse crossing the Netherlands. Search the catalog, choose an observing location, inspect exact local circumstances, and move through each visible event in a horizon-aware sky or scientifically consistent magnified close-up.
+A local guide to every solar eclipse from August 12, 2026 through October 7, 2135, including the next total eclipse visible from the Netherlands. Search the catalog, choose an observing location, inspect local circumstances, and move through each visible event with a horizon view or a magnified close-up.
 
-## Why it stays lightweight
+## How it works
 
 - React, Astronomy Engine, and a small amount of canvas/SVG code run entirely in the browser.
 - No backend, accounts, analytics, geocoder API, or API keys.

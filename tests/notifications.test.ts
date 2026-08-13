@@ -101,7 +101,7 @@ describe("local eclipse alerts", () => {
     expect(calendar).toContain("TRIGGER:-PT15M");
     expect(calendar).toContain("LOCATION:Zaragoza\\, Spain");
     expect(calendar).toContain(
-      `SUMMARY:Solar eclipse ${window.eventId} — Totality begins`,
+      `SUMMARY:Solar eclipse ${window.eventId}: Totality begins`,
     );
     expect(calendar).toContain(`UID:solar-eclipse-${window.eventId}-c2-`);
     expect(alertCalendarFilename(window)).toBe(

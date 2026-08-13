@@ -182,7 +182,7 @@ export function alignmentGuidance(
         ? `Tilt ${altitudeDeltaDeg > 0 ? "up" : "down"}`
         : quality === "good"
           ? "Aligned with the event"
-          : "Approximately aligned — calibrate compass";
+          : "Approximately aligned. Calibrate compass";
   return {
     headingDeltaDeg,
     altitudeDeltaDeg,

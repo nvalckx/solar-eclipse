@@ -159,9 +159,9 @@ function directionFor(azimuth: number) {
 function eventLabel(state: SkyState) {
   if (state.sun.altitudeDeg <= -0.833) return "The Sun is below your horizon";
   if (!state.eclipse.visible) return "Outside the local eclipse phase";
-  if (state.eclipse.type === "total") return "Totality — the corona is visible";
+  if (state.eclipse.type === "total") return "Totality: the corona is visible";
   if (state.eclipse.type === "annular")
-    return "Annularity — the ring of fire is visible";
+    return "Annularity: the ring of fire is visible";
   return `${Math.round(state.eclipse.obscurationPercent)}% of the Sun is covered`;
 }
 

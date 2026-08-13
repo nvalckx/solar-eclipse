@@ -165,7 +165,7 @@ export function buildAlertCalendar(
       `DTSTAMP:${generatedAt}`,
       `DTSTART:${start}`,
       `DTEND:${end}`,
-      `SUMMARY:${calendarText(`Solar eclipse ${window.eventId} — ${event.label}`)}`,
+      `SUMMARY:${calendarText(`Solar eclipse ${window.eventId}: ${event.label}`)}`,
       `DESCRIPTION:${calendarText(`Local eclipse contact for ${location.label}. Calculated for ${coordinates}.`)}`,
       `LOCATION:${calendarText(location.label)}`,
       "BEGIN:VALARM",

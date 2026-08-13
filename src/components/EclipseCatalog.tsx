@@ -151,7 +151,7 @@ export function EclipseCatalog({
       <header className="catalog-heading">
         <div>
           <span className="kicker">NASA CATALOG · 2026–2135</span>
-          <h1 id="catalog-title">Every shadow ahead.</h1>
+          <h1 id="catalog-title">Solar eclipses through 2135.</h1>
           <p>
             Explore all {records.length} solar eclipses through the next total
             eclipse in the Netherlands.
