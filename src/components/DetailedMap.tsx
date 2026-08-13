@@ -216,7 +216,7 @@ export function DetailedMap({
           ],
           zoom: viewportRef.current?.zoom ?? 1,
           minZoom: 1,
-          maxZoom: 4,
+          maxZoom: 18,
           zoomSnap: 0.5,
           zoomDelta: 0.5,
           zoomControl: true,

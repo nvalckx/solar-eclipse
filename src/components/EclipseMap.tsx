@@ -16,7 +16,7 @@ import type {
 const WIDTH = 900;
 const HEIGHT = 440;
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 4;
+const MAX_ZOOM = 18;
 const ZOOM_STEP = 0.5;
 const WORLD_VIEW_BOX = { x: 0, y: 0, width: WIDTH, height: HEIGHT };
 const EUROPE_VIEW_BOX = { x: 300, y: 14, width: 330, height: 170 };
