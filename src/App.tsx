@@ -258,6 +258,8 @@ export function App() {
   const [showLocation, setShowLocation] = useState(false);
   const [showPath, setShowPath] = useState(false);
   const [mapView, setMapView] = useState<"overview" | "detail">("overview");
+  const [detailLoadRequested, setDetailLoadRequested] = useState(false);
+  const [mapError, setMapError] = useState("");
   const [showAlignment, setShowAlignment] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [alertPreferences, setAlertPreferences] = useState(readSavedAlerts);
@@ -1176,38 +1178,61 @@ export function App() {
                 </div>
               </div>
             )}
-            <div
-              className="map-view-switcher"
-              role="group"
-              aria-label="Map view"
-              data-testid="map-view-toggle"
-            >
-              <span className="map-view-switcher-label">Map view</span>
-              <div className="map-view-switcher-controls">
-                <button
-                  type="button"
-                  aria-pressed={mapView === "overview"}
-                  data-testid="map-view-overview"
-                  onClick={() => {
-                    setMapView("overview");
-                    setAnnouncement("Overview map selected.");
-                  }}
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={mapView === "detail"}
-                  data-testid="map-view-detail"
-                  onClick={() => {
-                    setMapView("detail");
-                    setAnnouncement("Detailed map selected.");
-                  }}
-                >
-                  Detailed
-                </button>
+            <div className="map-view-toolbar">
+              <div
+                className="map-view-switcher"
+                role="group"
+                aria-label="Map view"
+                data-testid="map-view-toggle"
+              >
+                <span className="map-view-switcher-label">Map view</span>
+                <div className="map-view-switcher-controls">
+                  <button
+                    type="button"
+                    aria-pressed={mapView === "overview"}
+                    data-testid="map-view-overview"
+                    onClick={() => {
+                      setMapView("overview");
+                      setMapError("");
+                      setAnnouncement("Overview map selected.");
+                    }}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={mapView === "detail"}
+                    data-testid="map-view-detail"
+                    onClick={() => {
+                      setMapView("detail");
+                      setMapError("");
+                      setAnnouncement("Detailed map selected.");
+                    }}
+                  >
+                    Detailed
+                  </button>
+                </div>
               </div>
+              {mapView === "overview" && !detailLoadRequested && (
+                <button
+                  type="button"
+                  className="map-view-load"
+                  onClick={() => {
+                    setMapError("");
+                    setDetailLoadRequested(true);
+                    setMapView("detail");
+                    setAnnouncement("Detailed map loading.");
+                  }}
+                >
+                  Load detailed map
+                </button>
+              )}
             </div>
+            {mapError && (
+              <p className="map-view-error" role="alert">
+                {mapError}
+              </p>
+            )}
             <div className="map-view-stage">
               <div hidden={mapView !== "overview"}>
                 <div className="event-overview-map">
@@ -1226,6 +1251,13 @@ export function App() {
                   location={location}
                   onSelect={applyMapCoordinates}
                   active={mapView === "detail"}
+                  requestLoad={detailLoadRequested}
+                  onProviderError={() => {
+                    setMapError(
+                      "Online map tiles could not be loaded. Showing the bundled overview instead.",
+                    );
+                    setMapView("overview");
+                  }}
                 />
               </div>
             </div>

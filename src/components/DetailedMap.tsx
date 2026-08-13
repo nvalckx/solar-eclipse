@@ -20,6 +20,8 @@ type Props = {
   location: ObserverLocation;
   onSelect: (latitude: number, longitude: number) => void;
   active?: boolean;
+  requestLoad?: boolean;
+  onProviderError?: () => void;
   className?: string;
 };
 
@@ -152,6 +154,8 @@ export function DetailedMap({
   location,
   onSelect,
   active = true,
+  requestLoad = false,
+  onProviderError,
   className,
 }: Props) {
   const helpId = useId();
@@ -165,6 +169,7 @@ export function DetailedMap({
   const eventRef = useRef(event);
   const pathRef = useRef(path);
   const locationRef = useRef(location);
+  const onProviderErrorRef = useRef(onProviderError);
   const [enabled, setEnabled] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [providerState, setProviderState] =
@@ -176,6 +181,11 @@ export function DetailedMap({
   eventRef.current = event;
   pathRef.current = path;
   locationRef.current = location;
+  onProviderErrorRef.current = onProviderError;
+
+  useEffect(() => {
+    if (requestLoad) setEnabled(true);
+  }, [requestLoad]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -212,7 +222,10 @@ export function DetailedMap({
         let baseTilesFailed = false;
         carto.once("tileerror", () => {
           baseTilesFailed = true;
-          if (!cancelled) setProviderState("error");
+          if (!cancelled) {
+            setProviderState("error");
+            onProviderErrorRef.current?.();
+          }
         });
         carto.once("load", () => {
           if (!cancelled && !baseTilesFailed) setProviderState("online");
@@ -265,7 +278,10 @@ export function DetailedMap({
         drawEventOverlays(leaflet, overlays, eventRef.current, pathRef.current);
       })
       .catch(() => {
-        if (!cancelled) setProviderState("error");
+        if (!cancelled) {
+          setProviderState("error");
+          onProviderErrorRef.current?.();
+        }
       });
 
     return () => {
