@@ -545,6 +545,25 @@ main {
 .map-view-stage > [hidden] {
   display: none;
 }
+@media (max-width: 520px) {
+  .map-view-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .map-view-switcher {
+    width: 100%;
+    min-width: 0;
+  }
+  .map-view-switcher-controls {
+    flex: 1;
+  }
+  .map-view-switcher-controls button {
+    flex: 1;
+  }
+  .map-view-load {
+    width: 100%;
+  }
+}
 .map-greatest circle {
   fill: #07101c;
   stroke: #ffe29c;
