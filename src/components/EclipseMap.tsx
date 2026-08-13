@@ -9,6 +9,7 @@ import type { Coordinate } from "../map-data";
 import type {
   EclipsePathData,
   EclipseRecord,
+  MapViewport,
   ObserverLocation,
 } from "../types";
 
@@ -47,6 +48,8 @@ type Props = {
   replayTimeMs?: number;
   event?: EclipseRecord;
   path?: EclipsePathData;
+  viewport?: MapViewport;
+  onViewportChange?: (viewport: MapViewport) => void;
 };
 
 export function EclipseMap({
@@ -57,10 +60,18 @@ export function EclipseMap({
   replayTimeMs,
   event,
   path,
+  viewport,
+  onViewportChange,
 }: Props) {
   const pathMode = replayTimeMs !== undefined;
-  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [localZoom, setLocalZoom] = useState(MIN_ZOOM);
   const [fullPath, setFullPath] = useState(false);
+  const currentViewport = viewport ?? {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    zoom: localZoom,
+  };
+  const zoom = currentViewport.zoom;
   const [markerX, markerY] = project([location.longitude, location.latitude]);
   const shadow = pathMode ? pathShadowAt(replayTimeMs) : null;
   const show2026Path = (!event || event.id === "2026-08-12") && !path;
@@ -73,14 +84,18 @@ export function EclipseMap({
   const locationViewBox = (() => {
     const viewBoxWidth = WIDTH / zoom;
     const viewBoxHeight = HEIGHT / zoom;
+    const [centerX, centerY] = project([
+      currentViewport.longitude,
+      currentViewport.latitude,
+    ]);
     return {
       x: Math.min(
         WIDTH - viewBoxWidth,
-        Math.max(0, markerX - viewBoxWidth / 2),
+        Math.max(0, centerX - viewBoxWidth / 2),
       ),
       y: Math.min(
         HEIGHT - viewBoxHeight,
-        Math.max(0, markerY - viewBoxHeight / 2),
+        Math.max(0, centerY - viewBoxHeight / 2),
       ),
       width: viewBoxWidth,
       height: viewBoxHeight,
@@ -105,12 +120,13 @@ export function EclipseMap({
   const handleWheel = (event: WheelEvent<SVGSVGElement>) => {
     if (!interactive) return;
     event.preventDefault();
-    setZoom((value) =>
-      Math.min(
-        MAX_ZOOM,
-        Math.max(MIN_ZOOM, value + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
-      ),
+    const nextZoom = Math.min(
+      MAX_ZOOM,
+      Math.max(MIN_ZOOM, zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
     );
+    if (onViewportChange)
+      onViewportChange({ ...currentViewport, zoom: nextZoom });
+    else setLocalZoom(nextZoom);
   };
 
   const eventDescription = event
@@ -250,9 +266,12 @@ export function EclipseMap({
             aria-label="Zoom in"
             data-testid="location-map-zoom-in"
             disabled={zoom >= MAX_ZOOM}
-            onClick={() =>
-              setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))
-            }
+            onClick={() => {
+              const nextZoom = Math.min(MAX_ZOOM, zoom + ZOOM_STEP);
+              if (onViewportChange)
+                onViewportChange({ ...currentViewport, zoom: nextZoom });
+              else setLocalZoom(nextZoom);
+            }}
           >
             +
           </button>
@@ -261,9 +280,12 @@ export function EclipseMap({
             aria-label="Zoom out"
             data-testid="location-map-zoom-out"
             disabled={zoom <= MIN_ZOOM}
-            onClick={() =>
-              setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))
-            }
+            onClick={() => {
+              const nextZoom = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
+              if (onViewportChange)
+                onViewportChange({ ...currentViewport, zoom: nextZoom });
+              else setLocalZoom(nextZoom);
+            }}
           >
             −
           </button>

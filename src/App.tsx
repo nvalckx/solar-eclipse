@@ -16,6 +16,7 @@ import type {
   EclipseRecord,
   EclipsePathData,
   EclipseWindow,
+  MapViewport,
   ObserverLocation,
   SkyMode,
   SkyState,
@@ -258,6 +259,11 @@ export function App() {
   const [showLocation, setShowLocation] = useState(false);
   const [showPath, setShowPath] = useState(false);
   const [mapView, setMapView] = useState<"overview" | "detail">("overview");
+  const [mapViewport, setMapViewport] = useState<MapViewport>(() => ({
+    latitude: initial.location.latitude,
+    longitude: initial.location.longitude,
+    zoom: 1,
+  }));
   const [detailLoadRequested, setDetailLoadRequested] = useState(false);
   const [mapError, setMapError] = useState("");
   const [showAlignment, setShowAlignment] = useState(false);
@@ -1241,6 +1247,8 @@ export function App() {
                     event={selectedRecord}
                     path={eventPath ?? undefined}
                     compact
+                    viewport={mapViewport}
+                    onViewportChange={setMapViewport}
                   />
                 </div>
               </div>
@@ -1251,6 +1259,8 @@ export function App() {
                   location={location}
                   onSelect={applyMapCoordinates}
                   active={mapView === "detail"}
+                  viewport={mapViewport}
+                  onViewportChange={setMapViewport}
                   requestLoad={detailLoadRequested}
                   onProviderError={() => {
                     setMapError(

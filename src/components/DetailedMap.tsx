@@ -4,6 +4,7 @@ import type {
   EclipsePathData,
   EclipseRecord,
   MapProviderState,
+  MapViewport,
   ObserverLocation,
 } from "../types";
 import "../detailed-map.css";
@@ -22,6 +23,8 @@ type Props = {
   active?: boolean;
   requestLoad?: boolean;
   onProviderError?: () => void;
+  viewport?: MapViewport;
+  onViewportChange?: (viewport: MapViewport) => void;
   className?: string;
 };
 
@@ -156,6 +159,8 @@ export function DetailedMap({
   active = true,
   requestLoad = false,
   onProviderError,
+  viewport,
+  onViewportChange,
   className,
 }: Props) {
   const helpId = useId();
@@ -170,6 +175,8 @@ export function DetailedMap({
   const pathRef = useRef(path);
   const locationRef = useRef(location);
   const onProviderErrorRef = useRef(onProviderError);
+  const onViewportChangeRef = useRef(onViewportChange);
+  const viewportRef = useRef(viewport);
   const [enabled, setEnabled] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [providerState, setProviderState] =
@@ -182,6 +189,8 @@ export function DetailedMap({
   pathRef.current = path;
   locationRef.current = location;
   onProviderErrorRef.current = onProviderError;
+  onViewportChangeRef.current = onViewportChange;
+  viewportRef.current = viewport;
 
   useEffect(() => {
     if (requestLoad) setEnabled(true);
@@ -201,10 +210,15 @@ export function DetailedMap({
         const leaflet = module.default;
         leafletRef.current = leaflet;
         map = leaflet.map(containerRef.current, {
-          center: [locationRef.current.latitude, locationRef.current.longitude],
-          zoom: 5,
-          minZoom: 2,
-          maxZoom: 18,
+          center: [
+            viewportRef.current?.latitude ?? locationRef.current.latitude,
+            viewportRef.current?.longitude ?? locationRef.current.longitude,
+          ],
+          zoom: viewportRef.current?.zoom ?? 1,
+          minZoom: 1,
+          maxZoom: 4,
+          zoomSnap: 0.5,
+          zoomDelta: 0.5,
           zoomControl: true,
           attributionControl: true,
           keyboard: true,
@@ -273,6 +287,17 @@ export function DetailedMap({
           onSelectRef.current(latlng.lat, latlng.lng);
         });
 
+        const reportViewport = () => {
+          const center = map?.getCenter();
+          if (!center) return;
+          onViewportChangeRef.current?.({
+            latitude: center.lat,
+            longitude: center.lng,
+            zoom: map?.getZoom() ?? viewportRef.current?.zoom ?? 1,
+          });
+        };
+        map.on("moveend zoomend", reportViewport);
+
         const overlays = leaflet.layerGroup().addTo(map);
         overlayGroupRef.current = overlays;
         drawEventOverlays(leaflet, overlays, eventRef.current, pathRef.current);
@@ -307,6 +332,22 @@ export function DetailedMap({
     const frame = requestAnimationFrame(() => map.invalidateSize());
     return () => cancelAnimationFrame(frame);
   }, [active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !viewport || !active) return;
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    if (
+      Math.abs(center.lat - viewport.latitude) > 0.000001 ||
+      Math.abs(center.lng - viewport.longitude) > 0.000001 ||
+      Math.abs(zoom - viewport.zoom) > 0.001
+    ) {
+      map.setView([viewport.latitude, viewport.longitude], viewport.zoom, {
+        animate: false,
+      });
+    }
+  }, [active, viewport]);
 
   useEffect(() => {
     const leaflet = leafletRef.current;

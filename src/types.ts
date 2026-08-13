@@ -109,6 +109,12 @@ export type LocalEclipseResult =
 
 export type MapProviderState = "bundled" | "loading" | "online" | "error";
 
+export type MapViewport = {
+  latitude: number;
+  longitude: number;
+  zoom: number;
+};
+
 export type SharedView = {
   version: 1 | 2;
   eclipseId?: EclipseId;
