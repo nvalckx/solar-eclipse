@@ -5,12 +5,7 @@ import {
   eclipseWindowFor,
   localEclipseFor,
 } from "../eclipse-logic";
-import {
-  eclipseEvents,
-  formatCountdown,
-  liveSituation,
-  type EclipseEventKey,
-} from "../live-view";
+import { eclipseEvents, type EclipseEventKey } from "../live-view";
 import {
   alignmentGuidance,
   circularJitter,
@@ -55,6 +50,8 @@ const directionFor = (azimuth: number) =>
     Math.round(normalizeDegrees(azimuth) / 45) % 8
   ];
 
+const SKY_GUIDE_REPLAY_RATE = 60;
+
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
 }
@@ -87,6 +84,7 @@ export function PhoneAlignmentDialog({
   const [selectedEvent, setSelectedEvent] = useState<EclipseEventKey>("MAX");
   const [followLive, setFollowLive] = useState(true);
   const [previewTimeMs, setPreviewTimeMs] = useState<number | null>(null);
+  const [isReplaying, setIsReplaying] = useState(false);
   const [mode, setMode] = useState<GuideMode>("explore");
   const [reading, setReading] = useState<OrientationReading | null>(null);
   const [sensorCapability, setSensorCapability] =
@@ -122,16 +120,8 @@ export function PhoneAlignmentDialog({
     : previewTimeMs !== null
       ? `Preview · ${formatTime(targetTime, true)}`
       : selected.label;
-  const liveStatus = liveSituation(now, window);
-  const nextLiveEvent = liveStatus.nextEvent;
-  const timelineStartMs =
-    now.getTime() <= window.peak.getTime()
-      ? now.getTime()
-      : window.peak.getTime();
-  const timelineEndMs =
-    now.getTime() <= window.peak.getTime()
-      ? window.peak.getTime()
-      : now.getTime();
+  const timelineStartMs = window.start.getTime();
+  const timelineEndMs = window.end.getTime();
   const timelineDurationMs = Math.max(1, timelineEndMs - timelineStartMs);
   const timelineValue = Math.round(
     Math.max(
@@ -175,6 +165,30 @@ export function PhoneAlignmentDialog({
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    if (!isReplaying) return;
+    let frame = 0;
+    let previous = performance.now();
+    const tick = (timestamp: number) => {
+      const elapsed = timestamp - previous;
+      previous = timestamp;
+      setPreviewTimeMs((current) => {
+        return Math.min(
+          timelineEndMs,
+          (current ?? timelineStartMs) + elapsed * SKY_GUIDE_REPLAY_RATE,
+        );
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isReplaying, timelineEndMs, timelineStartMs]);
+
+  useEffect(() => {
+    if (isReplaying && previewTimeMs !== null && previewTimeMs >= timelineEndMs)
+      setIsReplaying(false);
+  }, [isReplaying, previewTimeMs, timelineEndMs]);
 
   const stopCamera = () => {
     stopStream(streamRef.current);
@@ -541,6 +555,7 @@ export function PhoneAlignmentDialog({
   };
 
   const chooseEvent = (key: EclipseEventKey, time: Date) => {
+    setIsReplaying(false);
     setSelectedEvent(key);
     setFollowLive(false);
     setPreviewTimeMs(null);
@@ -555,6 +570,7 @@ export function PhoneAlignmentDialog({
   };
 
   const chooseLive = () => {
+    setIsReplaying(false);
     setFollowLive(true);
     setPreviewTimeMs(null);
     const liveTarget = calculateSkyState(now, sessionLocation, window).sun;
@@ -565,6 +581,7 @@ export function PhoneAlignmentDialog({
     const nextTimeMs = Math.round(
       timelineStartMs + (timelineDurationMs * value) / 1000,
     );
+    setIsReplaying(false);
     setFollowLive(false);
     setPreviewTimeMs(nextTimeMs);
     const previewTarget = calculateSkyState(
@@ -573,6 +590,27 @@ export function PhoneAlignmentDialog({
       window,
     ).sun;
     centerBody(previewTarget);
+  };
+
+  const toggleReplay = () => {
+    if (isReplaying) {
+      setIsReplaying(false);
+      return;
+    }
+    const replayStartMs =
+      previewTimeMs === null || previewTimeMs >= timelineEndMs
+        ? timelineStartMs
+        : previewTimeMs;
+    setIsReplaying(true);
+    setFollowLive(false);
+    if (replayStartMs === timelineStartMs) setSelectedEvent("C1");
+    setPreviewTimeMs(replayStartMs);
+    const replaySun = calculateSkyState(
+      new Date(replayStartMs),
+      sessionLocation,
+      window,
+    ).sun;
+    centerBody(replaySun);
   };
 
   const modeLabel =
@@ -801,30 +839,30 @@ export function PhoneAlignmentDialog({
               <p role="status">{locationMessage}</p>
             </div>
             <section
-              className="sky-guide-live-timeline"
-              aria-labelledby="sky-guide-live-title"
+              className="sky-guide-playback"
+              aria-labelledby="sky-guide-playback-title"
             >
-              <div className="sky-guide-live-heading">
+              <div className="sky-guide-playback-heading">
                 <div>
-                  <span className="kicker">LIVE SKY CLOCK</span>
-                  <strong id="sky-guide-live-title">
-                    {nextLiveEvent
-                      ? `${nextLiveEvent.label} in`
-                      : "Eclipse replay available"}
+                  <span className="kicker">ECLIPSE PLAYBACK</span>
+                  <strong id="sky-guide-playback-title">
+                    First contact to last contact
                   </strong>
                 </div>
-                <output data-testid="sky-guide-countdown" aria-live="off">
-                  {nextLiveEvent
-                    ? formatCountdown(
-                        nextLiveEvent.time.getTime() - now.getTime(),
-                      )
-                    : "Event complete"}
-                </output>
+                <button
+                  type="button"
+                  className="sky-guide-playback-button"
+                  data-testid="sky-guide-playback"
+                  aria-label={
+                    isReplaying ? "Pause eclipse replay" : "Play eclipse replay"
+                  }
+                  onClick={toggleReplay}
+                >
+                  {isReplaying ? "Ⅱ Pause" : "▶ Play"}
+                </button>
               </div>
               <label htmlFor="sky-guide-time-slider">
-                {now.getTime() <= window.peak.getTime()
-                  ? "Fast-forward to maximum eclipse"
-                  : "Replay from maximum eclipse to now"}
+                Scrub the local eclipse timeline
               </label>
               <input
                 id="sky-guide-time-slider"
@@ -838,13 +876,9 @@ export function PhoneAlignmentDialog({
                 onChange={(event) => scrubTimeline(Number(event.target.value))}
               />
               <div className="sky-guide-timeline-labels" aria-hidden="true">
-                <span>
-                  {now.getTime() <= window.peak.getTime() ? "Now" : "Maximum"}
-                </span>
+                <span>First contact</span>
                 <strong>{formatTime(targetTime, true)}</strong>
-                <span>
-                  {now.getTime() <= window.peak.getTime() ? "Maximum" : "Now"}
-                </span>
+                <span>Last contact</span>
               </div>
             </section>
             <section

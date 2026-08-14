@@ -88,7 +88,7 @@ test("keeps a map-selected location when the eclipse changes", async ({
   expect(selectedCoordinates).toBeTruthy();
   const selectedLatitude = Number.parseFloat(selectedCoordinates!);
 
-  await page.getByRole("button", { name: "Eclipses" }).click();
+  await page.getByRole("button", { name: "All eclipses" }).click();
   await page
     .locator(".eclipse-card")
     .filter({ hasText: "2026" })
@@ -112,7 +112,7 @@ test("lands on the next locally visible eclipse and exposes the century catalog"
   page,
 }) => {
   const nextNavigation = page.getByRole("button", {
-    name: "Next",
+    name: "My next eclipse",
     exact: true,
   });
   await expect(nextNavigation).toHaveAttribute("aria-current", "page");
@@ -120,7 +120,7 @@ test("lands on the next locally visible eclipse and exposes the century catalog"
   await expect(page.getByText("Next total here").first()).toBeVisible();
   await expect(page.locator(".event-date")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
 
-  await page.getByRole("button", { name: "Eclipses", exact: true }).click();
+  await page.getByRole("button", { name: "All eclipses", exact: true }).click();
   await expect(page).toHaveURL(/view=catalog/);
   await expect(
     page.getByRole("heading", { name: "Every shadow ahead." }),
@@ -134,10 +134,43 @@ test("lands on the next locally visible eclipse and exposes the century catalog"
   ).toBeVisible();
 });
 
+test("exposes the guided Plan, Preview, Live, and Details journey", async ({
+  page,
+}) => {
+  const rail = page.getByRole("navigation", { name: "Event journey" });
+  await expect(rail).toBeVisible();
+  await expect(rail.getByRole("link", { name: /Plan/ })).toHaveAttribute(
+    "aria-current",
+    "location",
+  );
+  await expect(page.locator("#plan")).toBeVisible();
+  await expect(page.locator("#preview")).toBeVisible();
+  await expect(page.locator("#live")).toBeVisible();
+  await expect(page.locator("#details")).toBeVisible();
+  await expect(page.locator("#plan").locator("#event-map")).toBeVisible();
+  await expect(page.getByText(/Look toward .* at maximum/i)).toBeVisible();
+
+  await rail.getByRole("link", { name: /Preview/ }).click();
+  await expect(page).toHaveURL(/#preview$/);
+  await expect(page.locator("#preview")).toBeInViewport();
+  await expect(
+    page.getByText(/both disks are enlarged equally/i),
+  ).toBeVisible();
+
+  await rail.getByRole("link", { name: /Live/ }).click();
+  await expect(page).toHaveURL(/#live$/);
+  await expect(page.locator("#live")).toBeInViewport();
+
+  await rail.getByRole("link", { name: /Details/ }).click();
+  await expect(page).toHaveURL(/#details$/);
+  await expect(page.locator("#details")).toBeInViewport();
+  await expect(page.getByText(/Terminology and method/i)).toBeVisible();
+});
+
 test("filters the catalog and opens an event-specific workspace", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Eclipses", exact: true }).click();
+  await page.getByRole("button", { name: "All eclipses", exact: true }).click();
   await page.getByLabel("Search date, type, or Saros").fill("2135-10-07");
   const eclipse = page.locator(".eclipse-card").filter({ hasText: "2135" });
   await expect(eclipse).toHaveCount(1);
@@ -148,7 +181,7 @@ test("filters the catalog and opens an event-specific workspace", async ({
   await expect(page).toHaveURL(/eclipse=2135-10-07/);
   await expect(page).toHaveURL(/view=event/);
   await expect(
-    page.getByRole("button", { name: "Event", exact: true }),
+    page.getByRole("button", { name: "Selected eclipse", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".event-context-bar")).toContainText("2135");
   await expect(
@@ -253,7 +286,9 @@ test("switches views and controls the timeline and playback", async ({
     "aria-pressed",
     "true",
   );
-  await expect(page.getByText(/magnified equally/i)).toBeVisible();
+  await expect(
+    page.getByText(/relative disk size.*overlap remain accurate/i),
+  ).toBeVisible();
   await page.getByTestId("mode-sky").click();
   await page.getByTestId("maximum-time").click();
   await page.getByTestId("speed-180").click();
@@ -564,7 +599,7 @@ test("explores the full sphere, follows the compass, and enables camera AR", asy
   await expect(opener).toBeFocused();
 });
 
-test("shows the current Sun and Moon and fast-forwards the live sky", async ({
+test("shows the current Sun and Moon and replays the full local eclipse", async ({
   page,
 }) => {
   await page.clock.install({ time: new Date("2026-08-06T12:00:00Z") });
@@ -584,19 +619,25 @@ test("shows the current Sun and Moon and fast-forwards the live sky", async ({
   await expect(page.getByTestId("sky-guide-moon-position")).toContainText(
     /Moon .* altitude/,
   );
-  await expect(page.getByTestId("sky-guide-countdown")).toContainText(/d/);
   await expect(
-    page.getByLabel("Fast-forward to maximum eclipse"),
+    page.getByLabel("Scrub the local eclipse timeline"),
   ).toBeVisible();
   await expect(canvas).toHaveAttribute("data-scene-time", /^2026-08-06T12:00:/);
 
-  await page.getByTestId("sky-guide-time-slider").fill("1000");
+  await page.getByTestId("sky-guide-playback").click();
   await expect(page.getByTestId("alignment-event-live")).toHaveAttribute(
     "aria-pressed",
     "false",
   );
-  await expect(canvas).toHaveAttribute("data-scene-time", /^2026-08-12T/);
-  await expect(page.getByText(/^Preview ·/)).toBeVisible();
+  await expect(page.getByTestId("sky-guide-playback")).toHaveAttribute(
+    "aria-label",
+    "Pause eclipse replay",
+  );
+  await page.getByTestId("sky-guide-playback").click();
+  await expect(page.getByTestId("sky-guide-playback")).toHaveAttribute(
+    "aria-label",
+    "Play eclipse replay",
+  );
 });
 
 test("falls back to a manual sky finder when camera and motion are denied", async ({
@@ -775,6 +816,7 @@ test("previews a personalized card and copies a versioned share URL", async ({
   expect(sharedUrl).toContain("eclipse=");
   expect(sharedUrl).toContain("t=");
   expect(sharedUrl).toContain("mode=sky");
+  expect(sharedUrl).toMatch(/#preview$/);
   await expect(dialog.getByRole("status")).toContainText(/link copied/i);
 });
 

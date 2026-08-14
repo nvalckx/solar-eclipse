@@ -20,7 +20,9 @@ import type {
   ObserverLocation,
   SkyMode,
   SkyState,
+  JourneySection,
 } from "./types";
+import { livePromotionAt, localBriefing } from "./journey";
 import {
   buildShareUrl,
   LOCATION_STORAGE_KEY,
@@ -38,6 +40,7 @@ import { SkyCanvas } from "./components/SkyCanvas";
 import { Timeline } from "./components/Timeline";
 import { DirectionCompass } from "./components/DirectionCompass";
 import { LiveView } from "./components/LiveView";
+import { formatCountdown } from "./live-view";
 import { PhoneAlignmentDialog } from "./components/PhoneAlignmentDialog";
 import { NotificationDialog } from "./components/NotificationDialog";
 import { EclipseCatalog } from "./components/EclipseCatalog";
@@ -254,6 +257,7 @@ export function App() {
   const [mode, setMode] = useState<SkyMode>(initial.mode);
   const [nowMs, setNowMs] = useState(initial.nowMs);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
+  const [activeSection, setActiveSection] = useState<JourneySection>("plan");
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(60);
   const [showLocation, setShowLocation] = useState(false);
@@ -338,6 +342,21 @@ export function App() {
   const state = useMemo(
     () => calculateSkyState(new Date(nowMs), location, eclipseWindow),
     [nowMs, location, eclipseWindow],
+  );
+  const maximumState = useMemo(
+    () => calculateSkyState(eclipseWindow.peak, location, eclipseWindow),
+    [eclipseWindow, location],
+  );
+  const localBrief = useMemo(
+    () =>
+      localBriefing(location, eclipseWindow, maximumState, (date) =>
+        localDateTime(date, location.timezone),
+      ),
+    [eclipseWindow, location, maximumState],
+  );
+  const livePromotion = useMemo(
+    () => livePromotionAt(new Date(liveNowMs), eclipseWindow),
+    [eclipseWindow, liveNowMs],
   );
   const selectedDate = new Date(nowMs);
   const sunDirection = directionFor(state.sun.azimuthDeg);
@@ -445,6 +464,33 @@ export function App() {
       // Storage is an enhancement; private/locked-down browsers can decline it.
     }
   }, [location]);
+
+  useEffect(() => {
+    if (!eclipseResult.visible) {
+      setActiveSection("plan");
+      return;
+    }
+    const ids: JourneySection[] = ["plan", "preview", "live", "details"];
+    const sections = ids
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section));
+    if (!sections.length || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (
+          visible?.target.id &&
+          ids.includes(visible.target.id as JourneySection)
+        )
+          setActiveSection(visible.target.id as JourneySection);
+      },
+      { rootMargin: "-18% 0px -62% 0px", threshold: [0.15, 0.4, 0.7] },
+    );
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [eclipseResult.visible, selectedEclipseId, location]);
 
   useEffect(() => {
     try {
@@ -633,6 +679,7 @@ export function App() {
     url.searchParams.set("eclipse", id);
     if (view === "next") url.searchParams.delete("view");
     else url.searchParams.set("view", view);
+    url.hash = "";
     window.history.replaceState(null, "", url);
     setAnnouncement(`${id} eclipse selected.`);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -652,14 +699,26 @@ export function App() {
     );
   };
 
+  const scrollToSection = (section: JourneySection, focusId?: string) => {
+    const target = document.getElementById(section);
+    if (!target) return;
+    const reducedMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
+    const url = new URL(window.location.href);
+    url.hash = section;
+    window.history.replaceState(null, "", url);
+    if (focusId) {
+      requestAnimationFrame(() =>
+        document.getElementById(focusId)?.focus({ preventScroll: true }),
+      );
+    }
+  };
+
   const previewFromLive = (date: Date) => {
     selectTime(date.getTime());
-    document.querySelector("#simulator")?.scrollIntoView({
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-      block: "start",
-    });
+    scrollToSection("preview", "simulator-title");
   };
 
   const changePlaying = (playing: boolean) => {
@@ -687,13 +746,17 @@ export function App() {
   };
 
   const handleShare = () => {
-    const url = buildShareUrl(
-      window.location.href,
-      location,
-      selectedDate,
-      mode,
-      selectedEclipseId,
+    const shareLink = new URL(
+      buildShareUrl(
+        window.location.href,
+        location,
+        selectedDate,
+        mode,
+        selectedEclipseId,
+      ),
     );
+    shareLink.hash = "preview";
+    const url = shareLink.toString();
     const model: ShareCardModel = {
       state,
       eclipseWindow,
@@ -813,8 +876,8 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#simulator">
-        Skip to simulator
+      <a className="skip-link" href="#plan">
+        Skip to eclipse plan
       </a>
       <header className="topbar">
         <button
@@ -833,7 +896,7 @@ export function App() {
             aria-current={appView === "next" ? "page" : undefined}
             onClick={showNext}
           >
-            Next
+            My next eclipse
           </button>
           <button
             type="button"
@@ -845,14 +908,14 @@ export function App() {
               window.history.replaceState(null, "", url);
             }}
           >
-            Eclipses
+            All eclipses
           </button>
           <button
             type="button"
             aria-current={appView === "event" ? "page" : undefined}
             onClick={() => selectEclipse(selectedEclipseId, "event")}
           >
-            Event
+            Selected eclipse
           </button>
         </nav>
         <div className="topbar-actions">
@@ -889,7 +952,10 @@ export function App() {
         <main
           className={`event-page ${eclipseResult.visible ? "" : "not-visible"}`}
         >
-          <section className="event-context-bar" aria-label="Selected eclipse">
+          <section
+            className="event-context-bar"
+            aria-label="Selected eclipse and journey"
+          >
             <div>
               <span className={`eclipse-type type-${selectedRecord.type}`}>
                 {selectedRecord.type}
@@ -902,18 +968,48 @@ export function App() {
                   timeZone: "UTC",
                 }).format(new Date(`${selectedRecord.id}T12:00:00Z`))}
               </strong>
-              <small>
-                Magnitude {selectedRecord.magnitude.toFixed(4)} · Saros{" "}
-                {selectedRecord.saros}
-              </small>
+              <small>NASA catalog event</small>
             </div>
-            <div>
-              <a href="#overview">Overview</a>
-              <a href="#event-map">Map</a>
-              <a href="#simulator">Simulation</a>
-              <a href="#circumstances">Circumstances</a>
-              <a href="#prepare">Prepare</a>
-            </div>
+            <nav className="journey-rail" aria-label="Event journey">
+              <a
+                href="#plan"
+                aria-current={activeSection === "plan" ? "location" : undefined}
+              >
+                <span>1</span> Plan
+              </a>
+              {eclipseResult.visible && (
+                <>
+                  <a
+                    href="#preview"
+                    aria-current={
+                      activeSection === "preview" ? "location" : undefined
+                    }
+                  >
+                    <span>2</span> Preview
+                  </a>
+                  <a
+                    href="#live"
+                    className={
+                      livePromotion !== "none" ? "promoted" : undefined
+                    }
+                    aria-current={
+                      activeSection === "live" ? "location" : undefined
+                    }
+                  >
+                    <span>3</span> Live
+                    {livePromotion !== "none" && <i aria-hidden="true" />}
+                  </a>
+                </>
+              )}
+              <a
+                href="#details"
+                aria-current={
+                  activeSection === "details" ? "location" : undefined
+                }
+              >
+                <span>{eclipseResult.visible ? 4 : 2}</span> Details
+              </a>
+            </nav>
           </section>
 
           {!eclipseResult.visible && (
@@ -968,169 +1064,404 @@ export function App() {
             </section>
           )}
 
-          <section className="hero" id="overview">
-            <div className="hero-copy">
-              <p className="eyebrow">
-                <span />
-                {appView === "next"
-                  ? "Next eclipse from your sky"
-                  : `${selectedRecord.type} eclipse workspace`}
-              </p>
-              <h1>
-                See the{" "}
-                <em>{selectedRecord.type === "annular" ? "ring" : "shadow"}</em>{" "}
-                arrive.
-              </h1>
-              <p className="lede">
-                Explore how the Moon crosses the Sun from your sky. Choose a
-                place, move through the event, and know exactly where to look.
-              </p>
-              <a className="hero-live-cta" href="#live">
-                <i aria-hidden="true" /> Open the eclipse-day live view
-                <span aria-hidden="true">↓</span>
-              </a>
-              <button
-                ref={locationButtonRef}
-                className="location-chip"
-                data-testid="location-picker"
-                aria-haspopup="dialog"
-                onClick={(event) => openLocation(event.currentTarget)}
-              >
-                <span className="pin">⌖</span>
-                <span>
-                  <small>VIEWING FROM</small>
-                  <strong>{location.label}</strong>
-                </span>
-                <span aria-hidden="true">Change</span>
-              </button>
-              <dl className="hero-stats">
-                <div>
-                  <dt>Local maximum</dt>
-                  <dd>{peakTime}</dd>
-                  <dd className="stat-note">
-                    {timezoneName(location.timezone, eclipseWindow.peak)}
-                  </dd>
+          <section className="journey-section plan-section" id="plan">
+            {eclipseResult.visible && (
+              <span
+                id="overview"
+                className="legacy-anchor"
+                aria-hidden="true"
+              />
+            )}
+            <div className="hero" id="overview-content">
+              <div className="hero-copy">
+                <p className="eyebrow">
+                  <span />
+                  {appView === "next"
+                    ? "Next eclipse from your sky"
+                    : `${selectedRecord.type} eclipse workspace`}
+                </p>
+                <h1>{localBrief.title}</h1>
+                <p className="lede">{localBrief.summary}</p>
+                <p className="briefing-direction">
+                  Look toward <strong>{localBrief.direction}</strong> at
+                  maximum.
+                </p>
+                <button
+                  ref={locationButtonRef}
+                  className="location-chip"
+                  data-testid="location-picker"
+                  aria-haspopup="dialog"
+                  onClick={(event) => openLocation(event.currentTarget)}
+                >
+                  <span className="pin">⌖</span>
+                  <span>
+                    <small>VIEWING FROM</small>
+                    <strong>{location.label}</strong>
+                  </span>
+                  <span aria-hidden="true">Change</span>
+                </button>
+                <dl className="hero-stats">
+                  <div>
+                    <dt>Local maximum</dt>
+                    <dd>{peakTime}</dd>
+                    <dd className="stat-note">
+                      {timezoneName(location.timezone, eclipseWindow.peak)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {eclipseWindow.localType === "annular"
+                        ? "Annularity here"
+                        : "Totality here"}
+                    </dt>
+                    <dd>{formatDuration(centralDurationSeconds)}</dd>
+                    <dd className="stat-note">
+                      {eclipseWindow.centralStart
+                        ? `Calculated ${eclipseWindow.localType} phase`
+                        : `${Math.round(eclipseWindow.peakObscuration * 100)}% at maximum`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Next total here</dt>
+                    <dd>{nextTotalAtLocation?.eventId ?? "Beyond 2135"}</dd>
+                    <dd className="stat-note">For {location.label}</dd>
+                  </div>
+                </dl>
+                <div className="journey-actions">
+                  <a className="primary-button" href="#preview">
+                    Preview the eclipse ↓
+                  </a>
+                  {eclipseResult.visible && (
+                    <a className="secondary-button" href="#live">
+                      Open live guide
+                    </a>
+                  )}
                 </div>
-                <div>
-                  <dt>
-                    {eclipseWindow.localType === "annular"
-                      ? "Annularity here"
-                      : "Totality here"}
-                  </dt>
-                  <dd>{formatDuration(centralDurationSeconds)}</dd>
-                  <dd className="stat-note">
-                    {eclipseWindow.centralStart
-                      ? `Calculated ${eclipseWindow.localType} phase`
-                      : `${Math.round(eclipseWindow.peakObscuration * 100)}% at maximum`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Next total here</dt>
-                  <dd>{nextTotalAtLocation?.eventId ?? "Beyond 2135"}</dd>
-                  <dd className="stat-note">For {location.label}</dd>
-                </div>
-              </dl>
+              </div>
+              <article className="briefing-card">
+                <span className="kicker">AT A GLANCE · {location.label}</span>
+                <strong>{localBrief.coverage}</strong>
+                <p>{localBrief.safety}</p>
+                <a
+                  href="https://science.nasa.gov/eclipses/safety/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  NASA eye-safety guidance ↗
+                </a>
+              </article>
             </div>
 
             <section
-              className="simulator"
-              id="simulator"
-              aria-labelledby="simulator-title"
+              className="event-map-workspace"
+              id="event-map"
+              aria-labelledby="event-map-title"
             >
-              <header className="simulator-header">
-                <div>
-                  <span className="kicker">AT SELECTED TIME · {zoneName}</span>
-                  <h2 id="simulator-title">{eventLabel(state)}</h2>
-                  <p>{selectedTime}</p>
-                </div>
-                <div className="mode-switch" aria-label="Simulator view">
-                  <button
-                    aria-pressed={mode === "sky"}
-                    data-testid="mode-sky"
-                    onClick={() => {
-                      setMode("sky");
-                      setAnnouncement("Sky view selected.");
-                    }}
-                  >
-                    Sky
-                  </button>
-                  <button
-                    aria-pressed={mode === "closeup"}
-                    data-testid="mode-closeup"
-                    onClick={() => {
-                      setMode("closeup");
-                      setAnnouncement("Magnified close-up selected.");
-                    }}
-                  >
-                    Close-up
-                  </button>
-                </div>
+              <header>
+                <span className="kicker">LOCATION & PATH</span>
+                <h2 id="event-map-title">Choose your observing point.</h2>
+                <p>
+                  Switch between the bundled eclipse overview and an optional
+                  detailed map with roads and terrain.
+                </p>
               </header>
-              <div className="sky-frame">
-                <SkyCanvas
-                  state={state}
-                  mode={mode}
-                  description={description}
-                  showGolfHole={location.label === GOLF_LOCATION_LABEL}
-                />
-                <div className="scale-note">
-                  {mode === "closeup"
-                    ? "Magnified equally · overlap remains accurate"
-                    : "Disks enlarged equally · altitude and bearing are true"}
+              <div className="map-view-toolbar">
+                <div
+                  className="map-view-switcher"
+                  role="group"
+                  aria-label="Map view"
+                  data-testid="map-view-toggle"
+                >
+                  <span className="map-view-switcher-label">Map view</span>
+                  <div className="map-view-switcher-controls">
+                    <button
+                      type="button"
+                      aria-pressed={mapView === "overview"}
+                      data-testid="map-view-overview"
+                      onClick={() => {
+                        setMapView("overview");
+                        setMapError("");
+                        setAnnouncement("Overview map selected.");
+                      }}
+                    >
+                      Overview
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={mapView === "detail"}
+                      data-testid="map-view-detail"
+                      onClick={() => {
+                        setMapView("detail");
+                        setMapError("");
+                        setAnnouncement("Detailed map selected.");
+                      }}
+                    >
+                      Detailed
+                    </button>
+                  </div>
                 </div>
-                <DirectionCompass sun={state.sun} moon={state.moon} />
-                <div className="sky-readout">
-                  <span>
-                    Sun{" "}
-                    <strong>
-                      {Math.round(state.sun.altitudeDeg)}° altitude
-                    </strong>
-                  </span>
-                  <span>
-                    Bearing{" "}
-                    <strong>
-                      {Math.round(state.sun.azimuthDeg)}° {sunDirection}
-                    </strong>
-                  </span>
-                  <span>
-                    Covered{" "}
-                    <strong>
-                      {Math.round(state.eclipse.obscurationPercent)}%
-                    </strong>
-                  </span>
+                {mapView === "overview" && !detailLoadRequested && (
+                  <button
+                    type="button"
+                    className="map-view-load"
+                    onClick={() => {
+                      setMapError("");
+                      setDetailLoadRequested(true);
+                      setMapView("detail");
+                      setAnnouncement("Detailed map loading.");
+                    }}
+                  >
+                    Load detailed map
+                  </button>
+                )}
+              </div>
+              {mapError && (
+                <p className="map-view-error" role="alert">
+                  {mapError}
+                </p>
+              )}
+              <div className="map-view-stage">
+                <div hidden={mapView !== "overview"}>
+                  <div className="event-overview-map">
+                    <EclipseMap
+                      location={location}
+                      event={selectedRecord}
+                      path={eventPath ?? undefined}
+                      compact
+                      viewport={mapViewport}
+                      onViewportChange={setMapViewport}
+                    />
+                  </div>
+                </div>
+                <div hidden={mapView !== "detail"}>
+                  <DetailedMap
+                    event={selectedRecord}
+                    path={eventPath ?? undefined}
+                    location={location}
+                    onSelect={applyMapCoordinates}
+                    active={mapView === "detail"}
+                    viewport={mapViewport}
+                    onViewportChange={setMapViewport}
+                    requestLoad={detailLoadRequested}
+                    onProviderError={() => {
+                      setMapError(
+                        "Online map tiles could not be loaded. Showing the bundled overview instead.",
+                      );
+                      setMapView("overview");
+                    }}
+                  />
                 </div>
               </div>
-              <Timeline
-                window={eclipseWindow}
-                nowMs={nowMs}
-                isPlaying={isPlaying}
-                speed={speed}
-                formatTime={(date) => localDateTime(date, location.timezone)}
-                onTimeChange={selectTime}
-                onPlayingChange={changePlaying}
-                onSpeedChange={(value) => {
-                  setSpeed(value);
-                  setAnnouncement(`Playback speed set to ${value} times.`);
-                }}
-              />
+            </section>
+            <section
+              id="plan-circumstances"
+              className="plan-circumstances"
+              aria-label="Key local times"
+            >
+              <div>
+                <span className="kicker">KEY LOCAL TIMES</span>
+                <strong>
+                  {localDateTime(eclipseWindow.start, location.timezone)}
+                </strong>
+                <small>Partial eclipse begins</small>
+              </div>
+              <div>
+                <span className="kicker">MAXIMUM</span>
+                <strong>{peakTime}</strong>
+                <small>{localBrief.coverage}</small>
+              </div>
+              <div>
+                <span className="kicker">LAST CONTACT</span>
+                <strong>
+                  {localDateTime(eclipseWindow.end, location.timezone)}
+                </strong>
+                <small>Partial eclipse ends</small>
+              </div>
             </section>
           </section>
 
+          {eclipseResult.visible && (
+            <section
+              className="journey-section preview-section"
+              id="preview"
+              aria-labelledby="preview-title"
+            >
+              <header className="journey-section-heading">
+                <span className="kicker">STEP 2 · PREVIEW</span>
+                <h2 id="preview-title">See the eclipse from your sky.</h2>
+                <p>
+                  Move through the event contact by contact before the day
+                  arrives.
+                </p>
+              </header>
+              <section
+                className="simulator"
+                id="simulator"
+                aria-labelledby="simulator-title"
+              >
+                <header className="simulator-header">
+                  <div>
+                    <span className="kicker">
+                      AT SELECTED TIME · {zoneName}
+                    </span>
+                    <h2 id="simulator-title" tabIndex={-1}>
+                      {eventLabel(state)}
+                    </h2>
+                    <p>{selectedTime}</p>
+                  </div>
+                  <div className="mode-switch" aria-label="Simulator view">
+                    <button
+                      aria-pressed={mode === "sky"}
+                      data-testid="mode-sky"
+                      onClick={() => {
+                        setMode("sky");
+                        setAnnouncement("Sky view selected.");
+                      }}
+                    >
+                      Sky
+                    </button>
+                    <button
+                      aria-pressed={mode === "closeup"}
+                      data-testid="mode-closeup"
+                      onClick={() => {
+                        setMode("closeup");
+                        setAnnouncement("Magnified close-up selected.");
+                      }}
+                    >
+                      Close-up
+                    </button>
+                  </div>
+                </header>
+                <div className="sky-frame">
+                  <SkyCanvas
+                    state={state}
+                    mode={mode}
+                    description={description}
+                    showGolfHole={location.label === GOLF_LOCATION_LABEL}
+                  />
+                  <div className="scale-note">
+                    {mode === "closeup"
+                      ? "Magnified view · relative disk size, separation, and overlap remain accurate"
+                      : "Position is accurate · both disks are enlarged equally so they remain visible"}
+                  </div>
+                  <DirectionCompass sun={state.sun} moon={state.moon} />
+                  <div className="sky-readout">
+                    <span>
+                      Sun{" "}
+                      <strong>
+                        {Math.round(state.sun.altitudeDeg)}° altitude
+                      </strong>
+                    </span>
+                    <span>
+                      Bearing{" "}
+                      <strong>
+                        {Math.round(state.sun.azimuthDeg)}° {sunDirection}
+                      </strong>
+                    </span>
+                    <span>
+                      Covered{" "}
+                      <strong>
+                        {Math.round(state.eclipse.obscurationPercent)}%
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+                <Timeline
+                  window={eclipseWindow}
+                  nowMs={nowMs}
+                  isPlaying={isPlaying}
+                  speed={speed}
+                  formatTime={(date) => localDateTime(date, location.timezone)}
+                  onTimeChange={selectTime}
+                  onPlayingChange={changePlaying}
+                  onSpeedChange={(value) => {
+                    setSpeed(value);
+                    setAnnouncement(`Playback speed set to ${value} times.`);
+                  }}
+                />
+              </section>
+            </section>
+          )}
+
+          {eclipseResult.visible && livePromotion !== "none" && (
+            <aside
+              className={`live-promotion promotion-${livePromotion}`}
+              aria-label="Live eclipse guidance"
+            >
+              <div>
+                <span className="kicker">
+                  {livePromotion === "starting-soon"
+                    ? "STARTING SOON"
+                    : livePromotion === "replay-ready"
+                      ? "REPLAY READY"
+                      : "LIVE NOW"}
+                </span>
+                <strong>
+                  {livePromotion === "starting-soon"
+                    ? `First contact in ${formatCountdown(eclipseWindow.start.getTime() - liveNowMs)}`
+                    : livePromotion === "live"
+                      ? "Follow the eclipse as it unfolds."
+                      : "The local eclipse has ended; replay the key moments."}
+                </strong>
+              </div>
+              <a className="secondary-button" href="#live">
+                {livePromotion === "replay-ready"
+                  ? "Open replay"
+                  : "Open live guide"}{" "}
+                ↗
+              </a>
+            </aside>
+          )}
+
           <section
-            className="event-map-workspace"
-            id="event-map"
-            aria-labelledby="event-map-title"
+            id="live"
+            className="journey-section live-section"
+            aria-label="Live eclipse guide"
           >
-            <header>
-              <span className="kicker">LOCATION & PATH</span>
-              <h2 id="event-map-title">Choose your observing point.</h2>
+            <LiveView
+              location={location}
+              window={eclipseWindow}
+              now={new Date(liveNowMs)}
+              formatTime={(date, full) =>
+                localDateTime(date, location.timezone, full)
+              }
+              zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
+              onChangeLocation={openLocation}
+              onPreviewTime={previewFromLive}
+              onOpenSkyGuide={(opener) => {
+                alignmentReturnRef.current = opener;
+                setShowAlignment(true);
+                setAnnouncement("All-sphere sky guide opened.");
+              }}
+              alertsEnabled={
+                alertPreferences.enabled &&
+                isEventArmed(alertPreferences, selectedEclipseId) &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              }
+              onConfigureAlerts={(opener) => {
+                notificationReturnRef.current = opener;
+                setShowNotifications(true);
+                setAnnouncement("Eclipse alert setup opened.");
+              }}
+            />
+          </section>
+
+          <section
+            id="details"
+            className="journey-section details-section"
+            aria-labelledby="details-title"
+          >
+            <header className="journey-section-heading">
+              <span className="kicker">STEP 4 · DETAILS</span>
+              <h2 id="details-title">The precise picture.</h2>
               <p>
-                Switch between the bundled eclipse overview and an optional
-                detailed map with roads and terrain.
+                Technical facts, safety notes, verified path data, and how the
+                preview is calculated.
               </p>
             </header>
             {eventPath && nearestCentralPath && (
-              <div className="event-map-facts">
+              <div className="event-map-facts details-facts">
                 <div>
                   <small>Closest centerline</small>
                   <strong>
@@ -1184,262 +1515,162 @@ export function App() {
                 </div>
               </div>
             )}
-            <div className="map-view-toolbar">
-              <div
-                className="map-view-switcher"
-                role="group"
-                aria-label="Map view"
-                data-testid="map-view-toggle"
-              >
-                <span className="map-view-switcher-label">Map view</span>
-                <div className="map-view-switcher-controls">
-                  <button
-                    type="button"
-                    aria-pressed={mapView === "overview"}
-                    data-testid="map-view-overview"
-                    onClick={() => {
-                      setMapView("overview");
-                      setMapError("");
-                      setAnnouncement("Overview map selected.");
-                    }}
-                  >
-                    Overview
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={mapView === "detail"}
-                    data-testid="map-view-detail"
-                    onClick={() => {
-                      setMapView("detail");
-                      setMapError("");
-                      setAnnouncement("Detailed map selected.");
-                    }}
-                  >
-                    Detailed
-                  </button>
-                </div>
-              </div>
-              {mapView === "overview" && !detailLoadRequested && (
-                <button
-                  type="button"
-                  className="map-view-load"
-                  onClick={() => {
-                    setMapError("");
-                    setDetailLoadRequested(true);
-                    setMapView("detail");
-                    setAnnouncement("Detailed map loading.");
-                  }}
-                >
-                  Load detailed map
-                </button>
-              )}
-            </div>
-            {mapError && (
-              <p className="map-view-error" role="alert">
-                {mapError}
-              </p>
-            )}
-            <div className="map-view-stage">
-              <div hidden={mapView !== "overview"}>
-                <div className="event-overview-map">
-                  <EclipseMap
-                    location={location}
-                    event={selectedRecord}
-                    path={eventPath ?? undefined}
-                    compact
-                    viewport={mapViewport}
-                    onViewportChange={setMapViewport}
-                  />
-                </div>
-              </div>
-              <div hidden={mapView !== "detail"}>
-                <DetailedMap
-                  event={selectedRecord}
-                  path={eventPath ?? undefined}
-                  location={location}
-                  onSelect={applyMapCoordinates}
-                  active={mapView === "detail"}
-                  viewport={mapViewport}
-                  onViewportChange={setMapViewport}
-                  requestLoad={detailLoadRequested}
-                  onProviderError={() => {
-                    setMapError(
-                      "Online map tiles could not be loaded. Showing the bundled overview instead.",
-                    );
-                    setMapView("overview");
-                  }}
-                />
-              </div>
-            </div>
-          </section>
-
-          <LiveView
-            location={location}
-            window={eclipseWindow}
-            now={new Date(liveNowMs)}
-            formatTime={(date, full) =>
-              localDateTime(date, location.timezone, full)
-            }
-            zoneName={timezoneName(location.timezone, new Date(liveNowMs))}
-            onChangeLocation={openLocation}
-            onPreviewTime={previewFromLive}
-            onOpenSkyGuide={(opener) => {
-              alignmentReturnRef.current = opener;
-              setShowAlignment(true);
-              setAnnouncement("All-sphere sky guide opened.");
-            }}
-            alertsEnabled={
-              alertPreferences.enabled &&
-              isEventArmed(alertPreferences, selectedEclipseId) &&
-              "Notification" in window &&
-              Notification.permission === "granted"
-            }
-            onConfigureAlerts={(opener) => {
-              notificationReturnRef.current = opener;
-              setShowNotifications(true);
-              setAnnouncement("Eclipse alert setup opened.");
-            }}
-          />
-
-          <section className="insight-grid" aria-label="Local eclipse details">
-            <article className="info-card circumstances-card">
-              <header>
-                <span className="kicker">LOCAL CIRCUMSTANCES</span>
-                <span
-                  className={`status-pill ${state.eclipse.visible ? "active" : ""}`}
-                >
-                  AT SELECTED TIME
-                </span>
-              </header>
-              <div className="contact-grid">
-                <div>
-                  <small>C1 · PARTIAL START</small>
-                  <strong>
-                    {localDateTime(eclipseWindow.start, location.timezone)}
-                  </strong>
-                </div>
-                {eclipseWindow.centralStart && (
-                  <div>
-                    <small>
-                      C2 ·{" "}
-                      {eclipseWindow.localType === "annular"
-                        ? "ANNULARITY"
-                        : "TOTALITY"}{" "}
-                      START
-                    </small>
-                    <strong>
-                      {localDateTime(
-                        eclipseWindow.centralStart,
-                        location.timezone,
-                      )}
-                    </strong>
-                  </div>
-                )}
-                <div>
-                  <small>MAXIMUM</small>
-                  <strong>{peakTime}</strong>
-                </div>
-                {eclipseWindow.centralEnd && (
-                  <div>
-                    <small>
-                      C3 ·{" "}
-                      {eclipseWindow.localType === "annular"
-                        ? "ANNULARITY"
-                        : "TOTALITY"}{" "}
-                      END
-                    </small>
-                    <strong>
-                      {localDateTime(
-                        eclipseWindow.centralEnd,
-                        location.timezone,
-                      )}
-                    </strong>
-                  </div>
-                )}
-                <div>
-                  <small>C4 · PARTIAL END</small>
-                  <strong>
-                    {localDateTime(eclipseWindow.end, location.timezone)}
-                  </strong>
-                </div>
-              </div>
-              <p>
-                At maximum, {Math.round(eclipseWindow.peakObscuration * 100)}%
-                of the Sun is covered. At the selected time, the Sun is{" "}
-                {state.sun.altitudeDeg > -0.833
-                  ? `${Math.round(state.sun.altitudeDeg)}° above the horizon toward ${sunDirection}`
-                  : "below your horizon"}
-                .
-              </p>
-            </article>
-            <article className="info-card safety-card">
-              <span className="card-icon" aria-hidden="true">
-                ✺
-              </span>
-              <div>
-                <span className="kicker">LOOK AFTER YOUR EYES</span>
-                <h3>
-                  {state.eclipse.type === "total"
-                    ? "Totality at the selected time."
-                    : "Use certified eclipse glasses."}
-                </h3>
-                <p>
-                  {state.eclipse.type === "total"
-                    ? "Only during the brief total phase, when no bright photosphere is visible, may viewers look without eclipse glasses."
-                    : "Keep ISO 12312-2 compliant viewers on during every partial phase. Ordinary sunglasses are not safe."}
-                </p>
-                <a
-                  href="https://science.nasa.gov/eclipses/safety/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Read NASA safety guidance ↗
-                </a>
-              </div>
-            </article>
-            <button
-              ref={pathButtonRef}
-              className="info-card path-card"
-              data-testid="open-map"
-              onClick={openPath}
+            <p className="technical-meta">
+              Magnitude {selectedRecord.magnitude.toFixed(4)} · Saros{" "}
+              {selectedRecord.saros}
+            </p>
+            <section
+              id="circumstances"
+              className="insight-grid"
+              aria-label="Local eclipse details"
             >
-              <span className="path-art" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span>
-                <span className="kicker">THE VERIFIED PATH</span>
-                <strong>
-                  {selectedEclipseId === DEFAULT_ECLIPSE_ID
-                    ? "From the Arctic to Spain."
-                    : `Global ${selectedRecord.type} eclipse.`}
-                </strong>
-                <small>
-                  Explore the totality limits, centerline, UTC timing, and your
-                  selected place.
-                </small>
-              </span>
-              <b aria-hidden="true">↗</b>
-            </button>
-          </section>
+              <article className="info-card circumstances-card">
+                <header>
+                  <span className="kicker">LOCAL CIRCUMSTANCES</span>
+                  <span
+                    className={`status-pill ${state.eclipse.visible ? "active" : ""}`}
+                  >
+                    AT SELECTED TIME
+                  </span>
+                </header>
+                <div className="contact-grid">
+                  <div>
+                    <small>C1 · PARTIAL START</small>
+                    <strong>
+                      {localDateTime(eclipseWindow.start, location.timezone)}
+                    </strong>
+                  </div>
+                  {eclipseWindow.centralStart && (
+                    <div>
+                      <small>
+                        C2 ·{" "}
+                        {eclipseWindow.localType === "annular"
+                          ? "ANNULARITY"
+                          : "TOTALITY"}{" "}
+                        START
+                      </small>
+                      <strong>
+                        {localDateTime(
+                          eclipseWindow.centralStart,
+                          location.timezone,
+                        )}
+                      </strong>
+                    </div>
+                  )}
+                  <div>
+                    <small>MAXIMUM</small>
+                    <strong>{peakTime}</strong>
+                  </div>
+                  {eclipseWindow.centralEnd && (
+                    <div>
+                      <small>
+                        C3 ·{" "}
+                        {eclipseWindow.localType === "annular"
+                          ? "ANNULARITY"
+                          : "TOTALITY"}{" "}
+                        END
+                      </small>
+                      <strong>
+                        {localDateTime(
+                          eclipseWindow.centralEnd,
+                          location.timezone,
+                        )}
+                      </strong>
+                    </div>
+                  )}
+                  <div>
+                    <small>C4 · PARTIAL END</small>
+                    <strong>
+                      {localDateTime(eclipseWindow.end, location.timezone)}
+                    </strong>
+                  </div>
+                </div>
+                <p>
+                  At maximum, {Math.round(eclipseWindow.peakObscuration * 100)}%
+                  of the Sun is covered. At the selected time, the Sun is{" "}
+                  {state.sun.altitudeDeg > -0.833
+                    ? `${Math.round(state.sun.altitudeDeg)}° above the horizon toward ${sunDirection}`
+                    : "below your horizon"}
+                  .
+                </p>
+              </article>
+              <article id="prepare" className="info-card safety-card">
+                <span className="card-icon" aria-hidden="true">
+                  ✺
+                </span>
+                <div>
+                  <span className="kicker">LOOK AFTER YOUR EYES</span>
+                  <h3>
+                    {state.eclipse.type === "total"
+                      ? "Totality at the selected time."
+                      : "Use certified eclipse glasses."}
+                  </h3>
+                  <p>
+                    {state.eclipse.type === "total"
+                      ? "Only during the brief total phase, when no bright photosphere is visible, may viewers look without eclipse glasses."
+                      : "Keep ISO 12312-2 compliant viewers on during every partial phase. Ordinary sunglasses are not safe."}
+                  </p>
+                  <a
+                    href="https://science.nasa.gov/eclipses/safety/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Read NASA safety guidance ↗
+                  </a>
+                </div>
+              </article>
+              <button
+                ref={pathButtonRef}
+                className="info-card path-card"
+                data-testid="open-map"
+                onClick={openPath}
+              >
+                <span className="path-art" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>
+                  <span className="kicker">THE VERIFIED PATH</span>
+                  <strong>
+                    {selectedEclipseId === DEFAULT_ECLIPSE_ID
+                      ? "From the Arctic to Spain."
+                      : `Global ${selectedRecord.type} eclipse.`}
+                  </strong>
+                  <small>
+                    Explore the totality limits, centerline, UTC timing, and
+                    your selected place.
+                  </small>
+                </span>
+                <b aria-hidden="true">↗</b>
+              </button>
+            </section>
 
-          <details className="method-card">
-            <summary>How this preview works</summary>
-            <div>
-              <p>
-                Sun and Moon positions and local contacts are calculated in your
-                browser with Astronomy Engine. The close-up scales both disks
-                and their separation together, preserving the visible overlap.
-              </p>
-              <p>
-                Times use your selected IANA time zone. Terrain, clouds,
-                atmospheric transparency, and the Moon’s detailed limb profile
-                are not modeled, so this is a planning preview rather than
-                navigation or safety equipment.
-              </p>
-            </div>
-          </details>
+            <details className="method-card">
+              <summary>Terminology and method</summary>
+              <div>
+                <p>
+                  C1 and C4 are the start and end of the partial eclipse. C2 and
+                  C3 mark the start and end of totality or annularity. Magnitude
+                  is the eclipse depth; Saros is the repeating family number
+                  used by eclipse catalogs. The centerline is the path of
+                  greatest totality, and the umbra is the moving central shadow.
+                </p>
+                <p>
+                  Sun and Moon positions and local contacts are calculated in
+                  your browser with Astronomy Engine. The close-up scales both
+                  disks and their separation together, preserving the visible
+                  overlap.
+                </p>
+                <p>
+                  Times use your selected IANA time zone. Terrain, clouds,
+                  atmospheric transparency, and the Moon’s detailed limb profile
+                  are not modeled, so this is a planning preview rather than
+                  navigation or safety equipment.
+                </p>
+              </div>
+            </details>
+          </section>
         </main>
       )}
 

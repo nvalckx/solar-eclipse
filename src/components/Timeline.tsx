@@ -35,6 +35,13 @@ export function Timeline({
     window.centralStart && window.centralEnd
       ? position(window.centralEnd) - centralLeft
       : 0;
+  const centralName =
+    window.localType === "annular" ? "Annularity" : "Totality";
+  const speedMeaning: Record<number, string> = {
+    15: "15 simulated seconds per real second",
+    60: "1 simulated minute per real second",
+    180: "3 simulated minutes per real second",
+  };
 
   return (
     <div className="timeline-wrap">
@@ -73,31 +80,43 @@ export function Timeline({
         onChange={(event) => onTimeChange(Number(event.target.value))}
       />
       <div className="contact-buttons">
-        <button onClick={() => onTimeChange(window.start.getTime())}>
-          <small>C1</small>
+        <button
+          aria-label={`C1, Partial eclipse begins, ${formatTime(window.start)}`}
+          onClick={() => onTimeChange(window.start.getTime())}
+        >
+          <small>C1 · Partial begins</small>
           {formatTime(window.start)}
         </button>
         {window.centralStart && (
-          <button onClick={() => onTimeChange(window.centralStart!.getTime())}>
-            <small>C2</small>
-            {formatTime(window.centralStart)}
+          <button
+            aria-label={`C2, ${centralName} begins, ${formatTime(window.centralStart!)}`}
+            onClick={() => onTimeChange(window.centralStart!.getTime())}
+          >
+            <small>C2 · {centralName} begins</small>
+            {formatTime(window.centralStart!)}
           </button>
         )}
         <button
           data-testid="maximum-time"
           onClick={() => onTimeChange(window.peak.getTime())}
         >
-          <small>Maximum</small>
+          <small>Maximum eclipse</small>
           {formatTime(window.peak)}
         </button>
         {window.centralEnd && (
-          <button onClick={() => onTimeChange(window.centralEnd!.getTime())}>
-            <small>C3</small>
-            {formatTime(window.centralEnd)}
+          <button
+            aria-label={`C3, ${centralName} ends, ${formatTime(window.centralEnd!)}`}
+            onClick={() => onTimeChange(window.centralEnd!.getTime())}
+          >
+            <small>C3 · {centralName} ends</small>
+            {formatTime(window.centralEnd!)}
           </button>
         )}
-        <button onClick={() => onTimeChange(window.end.getTime())}>
-          <small>C4</small>
+        <button
+          aria-label={`C4, Partial eclipse ends, ${formatTime(window.end)}`}
+          onClick={() => onTimeChange(window.end.getTime())}
+        >
+          <small>C4 · Partial ends</small>
           {formatTime(window.end)}
         </button>
       </div>
@@ -123,6 +142,9 @@ export function Timeline({
             </button>
           ))}
         </div>
+        <span className="speed-meaning">
+          {speed}× · {speedMeaning[speed]}
+        </span>
         {window.centralStart && window.centralEnd && (
           <span className="totality-duration">
             {window.localType === "annular" ? "Annularity" : "Totality"}{" "}

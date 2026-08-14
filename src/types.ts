@@ -2,6 +2,7 @@ import type * as Astronomy from "astronomy-engine";
 
 export type LocationSource = "preset" | "geolocation" | "coordinates";
 export type SkyMode = "sky" | "closeup";
+export type JourneySection = "plan" | "preview" | "live" | "details";
 export type EclipseId = `${number}-${number}-${number}`;
 export type EclipseType = "partial" | "annular" | "total" | "hybrid";
 export type AppView = "next" | "catalog" | "event";
@@ -76,6 +77,14 @@ export type EclipseRecord = {
   maximumDurationSeconds?: number;
   mapUrl: string;
   pathUrl?: string;
+};
+
+export type LocalEclipseSummary = {
+  visible: boolean;
+  peakUtc: string;
+  coveragePercent: number;
+  localType?: Exclude<EclipseCircumstances["type"], "none">;
+  centralDurationSeconds?: number;
 };
 
 export type EclipsePathData = {

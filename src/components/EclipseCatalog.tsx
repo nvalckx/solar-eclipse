@@ -4,6 +4,7 @@ import type {
   EclipseId,
   EclipseRecord,
   EclipseType,
+  LocalEclipseSummary,
   ObserverLocation,
 } from "../types";
 
@@ -28,11 +29,11 @@ const visibilityCacheKey = (
   lastId: EclipseId,
 ) =>
   [
-    "eclipse-visibility",
+    "eclipse-summaries",
     ECLIPSE_CATALOG_METADATA.version,
-    location.latitude.toFixed(2),
-    location.longitude.toFixed(2),
-    Math.round(location.elevationMeters / 100) * 100,
+    location.latitude.toFixed(5),
+    location.longitude.toFixed(5),
+    Math.round(location.elevationMeters),
     firstId,
     lastId,
   ].join(":");
@@ -50,6 +51,27 @@ function formatDate(value: string) {
 function durationLabel(seconds?: number) {
   if (!seconds) return "Partial eclipse";
   return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s max`;
+}
+
+function localPeakLabel(
+  summary: LocalEclipseSummary | undefined,
+  location: ObserverLocation,
+) {
+  if (!summary) return "Calculating local maximum…";
+  if (!summary.visible) return "Not visible here";
+  const peak = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: location.timezone,
+    timeZoneName: "short",
+  }).format(new Date(summary.peakUtc));
+  const type =
+    summary.localType === "total"
+      ? "Totality"
+      : summary.localType === "annular"
+        ? "Annularity"
+        : "Partial";
+  return `Max here · ${Math.round(summary.coveragePercent)}% covered · ${peak} · ${type}`;
 }
 
 export function EclipseCatalog({
@@ -74,13 +96,15 @@ export function EclipseCatalog({
   );
   const [decade, setDecade] = useState<number | "all">("all");
   const [visibleOnly, setVisibleOnly] = useState(false);
-  const [visibleIds, setVisibleIds] = useState<Set<string> | null>(null);
+  const [summaries, setSummaries] = useState<Record<
+    string,
+    LocalEclipseSummary
+  > | null>(null);
   const [visibleLoading, setVisibleLoading] = useState(false);
   const [limit, setLimit] = useState(30);
 
   useEffect(() => {
-    setVisibleIds(null);
-    if (!visibleOnly) return;
+    setSummaries(null);
     const cacheKey = visibilityCacheKey(
       location,
       records[0].id,
@@ -89,7 +113,7 @@ export function EclipseCatalog({
     try {
       const cached = window.localStorage.getItem(cacheKey);
       if (cached) {
-        setVisibleIds(new Set(JSON.parse(cached) as string[]));
+        setSummaries(JSON.parse(cached) as Record<string, LocalEclipseSummary>);
         setVisibleLoading(false);
         return;
       }
@@ -98,22 +122,25 @@ export function EclipseCatalog({
     }
     setVisibleLoading(true);
     const worker = new Worker(
-      new URL("../catalog-visibility.worker.ts", import.meta.url),
+      new URL("../catalog-summary.worker.ts", import.meta.url),
       {
         type: "module",
       },
     );
-    worker.addEventListener("message", (event: MessageEvent<string[]>) => {
-      setVisibleIds(new Set(event.data));
-      setVisibleLoading(false);
-      try {
-        window.localStorage.setItem(cacheKey, JSON.stringify(event.data));
-      } catch {
-        // Visibility filtering still works when persistence is unavailable.
-      }
-    });
+    worker.addEventListener(
+      "message",
+      (event: MessageEvent<Record<string, LocalEclipseSummary>>) => {
+        setSummaries(event.data);
+        setVisibleLoading(false);
+        try {
+          window.localStorage.setItem(cacheKey, JSON.stringify(event.data));
+        } catch {
+          // Visibility filtering still works when persistence is unavailable.
+        }
+      },
+    );
     worker.addEventListener("error", () => {
-      setVisibleIds(new Set());
+      setSummaries({});
       setVisibleLoading(false);
     });
     worker.postMessage({
@@ -124,7 +151,7 @@ export function EclipseCatalog({
       endId: records.at(-1)!.id,
     });
     return () => worker.terminate();
-  }, [location, records, visibleOnly]);
+  }, [location, records]);
 
   useEffect(() => setLimit(30), [deferredQuery, type, decade, visibleOnly]);
 
@@ -136,14 +163,14 @@ export function EclipseCatalog({
           return false;
         if (decade !== "all" && Number(record.id.slice(0, 4)) >= decade + 10)
           return false;
-        if (visibleOnly && (!visibleIds || !visibleIds.has(record.id)))
+        if (visibleOnly && (!summaries || !summaries[record.id]?.visible))
           return false;
         if (!deferredQuery) return true;
         return `${record.id} ${record.type} saros ${record.saros}`.includes(
           deferredQuery,
         );
       }),
-    [records, type, decade, visibleOnly, visibleIds, deferredQuery],
+    [records, type, decade, visibleOnly, summaries, deferredQuery],
   );
 
   return (
@@ -214,7 +241,7 @@ export function EclipseCatalog({
         </label>
       </div>
 
-      {visibleLoading ? (
+      {visibleLoading && visibleOnly ? (
         <p className="catalog-status" role="status">
           Calculating local visibility in the background…
         </p>
@@ -234,6 +261,7 @@ export function EclipseCatalog({
               <span>
                 Magnitude {record.magnitude.toFixed(4)} · Saros {record.saros}
               </span>
+              <small>{localPeakLabel(summaries?.[record.id], location)}</small>
               <small>{durationLabel(record.maximumDurationSeconds)}</small>
               <i aria-hidden="true">Open event →</i>
             </button>

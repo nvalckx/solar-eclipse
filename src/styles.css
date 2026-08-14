@@ -112,6 +112,7 @@ button:disabled {
   min-height: 64px;
   padding: 10px 20px;
   display: flex;
+  position: relative;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -293,10 +294,10 @@ main {
   gap: 12px;
 }
 .eclipse-card {
-  min-height: 190px;
+  min-height: 204px;
   padding: 18px;
   display: grid;
-  grid-template-rows: auto 1fr auto auto auto;
+  grid-template-rows: auto 1fr auto auto auto auto;
   gap: 9px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -324,6 +325,9 @@ main {
 .eclipse-card > small {
   color: var(--muted);
   font: 11px/1.4 var(--mono);
+}
+.eclipse-card > small:first-of-type {
+  color: var(--orange-bright);
 }
 .eclipse-card > i {
   color: var(--orange-bright);
@@ -661,6 +665,15 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+@media (min-width: 901px) {
+  .primary-nav {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
 @media (max-width: 560px) {
   .catalog-workspace {
     width: min(100% - 28px, 1240px);
@@ -3538,7 +3551,7 @@ h1 em {
   background: rgba(5, 15, 25, 0.98);
 }
 .sky-guide-location,
-.sky-guide-live-timeline,
+.sky-guide-playback,
 .sky-guide-eclipse-detail,
 .sky-guide-help {
   padding: 15px;
@@ -3546,39 +3559,44 @@ h1 em {
   border-radius: 11px;
   background: rgba(13, 30, 48, 0.72);
 }
-.sky-guide-live-timeline {
+.sky-guide-playback {
   margin-top: 12px;
 }
-.sky-guide-live-heading {
+.sky-guide-playback-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
-.sky-guide-live-heading strong,
-.sky-guide-live-timeline label {
+.sky-guide-playback-heading strong,
+.sky-guide-playback label {
   display: block;
 }
-.sky-guide-live-heading strong {
+.sky-guide-playback-heading strong {
   margin-top: 7px;
   color: #fff0db;
   font-size: 13px;
 }
-.sky-guide-live-heading output {
-  color: var(--orange-bright);
-  font: 700 13px/1.3 var(--mono);
-  text-align: right;
-}
-.sky-guide-live-timeline label {
+.sky-guide-playback label {
   margin-top: 15px;
   color: #dce8f4;
   font: 700 10px/1.4 var(--mono);
 }
-.sky-guide-live-timeline input {
+.sky-guide-playback input {
   width: 100%;
   margin: 10px 0 5px;
   accent-color: var(--orange-bright);
   cursor: ew-resize;
+}
+.sky-guide-playback-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 147, 102, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 147, 102, 0.1);
+  color: var(--orange-bright);
+  font: 700 10px var(--mono);
+  white-space: nowrap;
 }
 .sky-guide-timeline-labels {
   display: grid;
@@ -3713,12 +3731,12 @@ h1 em {
     border-left: 0;
   }
   .sky-guide-location,
-  .sky-guide-live-timeline,
+  .sky-guide-playback,
   .sky-guide-eclipse-detail,
   .sky-guide-help {
     padding: 10px;
   }
-  .sky-guide-live-timeline,
+  .sky-guide-playback,
   .sky-guide-eclipse-detail,
   .sky-guide-help {
     margin-top: 0;
@@ -3794,6 +3812,278 @@ h1 em {
     left: 12px;
     right: auto;
     display: grid;
+  }
+}
+
+/* Guided event journey */
+.legacy-anchor {
+  display: block;
+  height: 0;
+  scroll-margin-top: 112px;
+}
+.journey-section {
+  scroll-margin-top: 112px;
+}
+.event-context-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 14, 24, 0.94);
+  backdrop-filter: blur(16px);
+}
+.journey-rail {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.journey-rail a {
+  min-height: 38px;
+  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--muted);
+  font: 700 11px var(--mono);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.journey-rail a span {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 9px;
+}
+.journey-rail a:hover,
+.journey-rail a[aria-current="location"] {
+  border-color: rgba(255, 147, 102, 0.58);
+  background: rgba(255, 147, 102, 0.1);
+  color: var(--orange-bright);
+}
+.journey-rail a.promoted {
+  color: #ffd4af;
+}
+.journey-rail a i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 10px var(--orange);
+}
+.plan-section .hero {
+  min-height: auto;
+  padding-top: 42px;
+  padding-bottom: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 360px);
+  align-items: stretch;
+}
+.plan-section .hero-copy {
+  min-width: 0;
+}
+.plan-section .hero-copy h1 {
+  max-width: 720px;
+  font-size: clamp(44px, 6vw, 78px);
+  text-wrap: balance;
+}
+.briefing-direction {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.briefing-direction strong {
+  color: var(--orange-bright);
+  font-weight: 600;
+}
+.journey-actions {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.journey-actions a {
+  text-decoration: none;
+}
+.briefing-card {
+  align-self: end;
+  padding: 20px;
+  border: 1px solid rgba(255, 147, 102, 0.35);
+  border-radius: 15px;
+  background: linear-gradient(
+    145deg,
+    rgba(59, 38, 34, 0.78),
+    rgba(12, 29, 47, 0.9)
+  );
+}
+.briefing-card > strong {
+  display: block;
+  margin: 14px 0 9px;
+  color: #fff0dc;
+  font-size: clamp(24px, 4vw, 34px);
+}
+.briefing-card p {
+  margin: 0;
+  color: #d2deea;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.briefing-card a {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--orange-bright);
+  font: 600 12px var(--mono);
+}
+.plan-map {
+  margin-top: 0;
+}
+.plan-circumstances {
+  width: min(1240px, calc(100% - 40px));
+  margin: 14px auto 32px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--line);
+}
+.plan-circumstances > div {
+  padding: 15px;
+  display: grid;
+  gap: 6px;
+  background: rgba(8, 22, 36, 0.86);
+}
+.plan-circumstances strong {
+  font-size: 19px;
+}
+.plan-circumstances small {
+  color: var(--muted);
+  font: 11px/1.4 var(--mono);
+}
+.journey-section-heading {
+  width: min(1480px, calc(100% - 40px));
+  margin: 0 auto 22px;
+  padding-top: 44px;
+}
+.journey-section-heading h2 {
+  margin: 8px 0 7px;
+  font-size: clamp(30px, 5vw, 52px);
+  letter-spacing: -0.045em;
+}
+.journey-section-heading p {
+  max-width: 700px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.preview-section .simulator {
+  width: min(1240px, calc(100% - 40px));
+  margin: 0 auto 32px;
+}
+.live-section .live-view {
+  padding-top: 40px;
+}
+.live-promotion {
+  width: min(1240px, calc(100% - 40px));
+  margin: 8px auto 0;
+  padding: 14px 17px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border: 1px solid rgba(255, 147, 102, 0.45);
+  border-radius: 13px;
+  background: rgba(55, 34, 29, 0.68);
+}
+.live-promotion > div {
+  display: grid;
+  gap: 5px;
+}
+.live-promotion strong {
+  color: #fff0dc;
+  font-size: 16px;
+}
+.live-promotion a {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+.details-section {
+  padding-bottom: 18px;
+}
+.details-section .journey-section-heading {
+  padding-top: 34px;
+}
+.details-section .method-card {
+  margin-bottom: 0;
+}
+.technical-meta {
+  width: min(1480px, calc(100% - 40px));
+  margin: 12px auto;
+  color: var(--quiet);
+  font: 11px var(--mono);
+}
+.speed-meaning {
+  color: var(--quiet);
+  font: 11px var(--mono);
+}
+
+@media (max-width: 900px) {
+  .event-context-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .journey-rail {
+    width: 100%;
+  }
+  .plan-section .hero {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .event-context-bar {
+    padding-inline: 14px;
+  }
+  .journey-rail a {
+    padding-inline: 8px;
+  }
+  .plan-section .hero,
+  .journey-section-heading {
+    width: calc(100% - 28px);
+  }
+  .plan-section .hero {
+    padding-top: 30px;
+    padding-inline: 0;
+  }
+  .plan-section .hero-copy h1 {
+    font-size: clamp(42px, 13vw, 62px);
+  }
+  .plan-circumstances,
+  .live-promotion,
+  .preview-section .simulator {
+    width: calc(100% - 28px);
+  }
+  .plan-circumstances {
+    grid-template-columns: 1fr;
+  }
+  .live-promotion {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .live-promotion a {
+    text-align: center;
+  }
+  .journey-section-heading {
+    padding-top: 30px;
   }
 }
 
