@@ -56,7 +56,7 @@ export function LiveView({
     : null;
 
   return (
-    <section className="live-view" id="live" aria-labelledby="live-title">
+    <section className="live-view" aria-labelledby="live-title">
       <header className="live-heading">
         <div>
           <p className="eyebrow">

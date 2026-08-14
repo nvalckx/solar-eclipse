@@ -183,7 +183,7 @@ export function EclipseCatalog({
           </span>
           <h1 id="catalog-title">Every shadow ahead.</h1>
           <p>
-            Explore all {records.length} solar eclipses through the total
+            Explore all {records.length} solar eclipses through the next total
             eclipse of {ECLIPSE_CATALOG_METADATA.range.end}.
           </p>
         </div>
