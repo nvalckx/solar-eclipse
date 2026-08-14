@@ -177,11 +177,14 @@ export function EclipseCatalog({
     <section className="catalog-workspace" aria-labelledby="catalog-title">
       <header className="catalog-heading">
         <div>
-          <span className="kicker">NASA CATALOG · 2026–2135</span>
+          <span className="kicker">
+            NASA CATALOG · {ECLIPSE_CATALOG_METADATA.range.start.slice(0, 4)}–
+            {ECLIPSE_CATALOG_METADATA.range.end.slice(0, 4)}
+          </span>
           <h1 id="catalog-title">Every shadow ahead.</h1>
           <p>
-            Explore all {records.length} solar eclipses through the next total
-            eclipse in the Netherlands.
+            Explore all {records.length} solar eclipses through the total
+            eclipse of {ECLIPSE_CATALOG_METADATA.range.end}.
           </p>
         </div>
         <strong>{filtered.length} events</strong>
@@ -193,7 +196,7 @@ export function EclipseCatalog({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Try 2135, total, or Saros 136"
+            placeholder="Try 2142, total, or Saros 136"
           />
         </label>
         <label>
@@ -283,3 +286,5 @@ export function EclipseCatalog({
     </section>
   );
 }
+
+export default EclipseCatalog;

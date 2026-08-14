@@ -479,3 +479,5 @@ export function DetailedMap({
     </section>
   );
 }
+
+export default DetailedMap;

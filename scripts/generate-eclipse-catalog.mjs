@@ -6,7 +6,7 @@ const SOURCES = [
   "https://eclipse.gsfc.nasa.gov/SEcat5/SE2101-2200.html",
 ];
 const START_ID = "2026-08-12";
-const END_ID = "2135-10-07";
+const END_ID = "2142-05-25";
 const PLACES_SOURCE =
   "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_populated_places_simple.geojson";
 const MONTHS = new Map(
@@ -140,13 +140,13 @@ if (records[0]?.id !== START_ID || records.at(-1)?.id !== END_ID) {
 if (new Set(records.map(({ id }) => id)).size !== records.length) {
   throw new Error("NASA catalog contains duplicate eclipse dates.");
 }
-const netherlandsFixture = records.find(({ id }) => id === END_ID);
+const targetFixture = records.find(({ id }) => id === END_ID);
 if (
-  !netherlandsFixture ||
-  netherlandsFixture.type !== "total" ||
-  Math.abs(netherlandsFixture.magnitude - 1.0603) > 0.0001
+  !targetFixture ||
+  targetFixture.type !== "total" ||
+  Math.abs(targetFixture.magnitude - 1.0449) > 0.0001
 ) {
-  throw new Error("The 2135 Netherlands total-eclipse fixture changed.");
+  throw new Error("The 2142 total-eclipse fixture changed.");
 }
 
 let generatedAt = new Date().toISOString();

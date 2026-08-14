@@ -3886,13 +3886,9 @@ h1 em {
   grid-template-columns: minmax(0, 1fr) minmax(250px, 360px);
   align-items: stretch;
 }
-.plan-section .hero-copy {
-  min-width: 0;
-}
 .plan-section .hero-copy h1 {
   max-width: 720px;
   font-size: clamp(44px, 6vw, 78px);
-  text-wrap: balance;
 }
 .briefing-direction {
   margin: 16px 0 0;
@@ -3915,9 +3911,6 @@ h1 em {
 }
 .briefing-card {
   align-self: end;
-  padding: 20px;
-  border: 1px solid rgba(255, 147, 102, 0.35);
-  border-radius: 15px;
   background: linear-gradient(
     145deg,
     rgba(59, 38, 34, 0.78),
@@ -3931,10 +3924,7 @@ h1 em {
   font-size: clamp(24px, 4vw, 34px);
 }
 .briefing-card p {
-  margin: 0;
   color: #d2deea;
-  font-size: 14px;
-  line-height: 1.55;
 }
 .briefing-card a {
   display: inline-block;
@@ -3948,26 +3938,6 @@ h1 em {
 .plan-circumstances {
   width: min(1240px, calc(100% - 40px));
   margin: 14px auto 32px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--line);
-}
-.plan-circumstances > div {
-  padding: 15px;
-  display: grid;
-  gap: 6px;
-  background: rgba(8, 22, 36, 0.86);
-}
-.plan-circumstances strong {
-  font-size: 19px;
-}
-.plan-circumstances small {
-  color: var(--muted);
-  font: 11px/1.4 var(--mono);
 }
 .journey-section-heading {
   width: min(1480px, calc(100% - 40px));
@@ -4071,9 +4041,6 @@ h1 em {
   .live-promotion,
   .preview-section .simulator {
     width: calc(100% - 28px);
-  }
-  .plan-circumstances {
-    grid-template-columns: 1fr;
   }
   .live-promotion {
     align-items: stretch;

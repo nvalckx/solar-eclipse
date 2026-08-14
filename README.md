@@ -1,6 +1,6 @@
-# Eclipse Companion 2026–2135
+# Eclipse Companion 2026–2142
 
-A local guide to every solar eclipse from August 12, 2026 through October 7, 2135, including the next total eclipse visible from the Netherlands. Search the catalog, choose an observing location, inspect local circumstances, and move through each visible event with a horizon view or a magnified close-up.
+A local guide to every solar eclipse from August 12, 2026 through the total eclipse of May 25, 2142. Search the catalog, choose an observing location, inspect local circumstances, and move through each visible event with a horizon view or a magnified close-up.
 
 ## How it works
 

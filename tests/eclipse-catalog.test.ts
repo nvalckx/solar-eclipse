@@ -12,10 +12,10 @@ describe("generated eclipse catalog", () => {
   test("is ordered, unique, and includes both promised endpoints", () => {
     expect(ECLIPSE_CATALOG.length).toBeGreaterThan(200);
     expect(ECLIPSE_CATALOG[0]?.id).toBe("2026-08-12");
-    expect(ECLIPSE_CATALOG.at(-1)?.id).toBe("2135-10-07");
+    expect(ECLIPSE_CATALOG.at(-1)?.id).toBe("2142-05-25");
     expect(ECLIPSE_CATALOG_METADATA.range).toEqual({
       start: "2026-08-12",
-      end: "2135-10-07",
+      end: "2142-05-25",
     });
     const ids = ECLIPSE_CATALOG.map((record) => record.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -36,7 +36,7 @@ describe("generated eclipse catalog", () => {
     expect(upcomingEclipses(new Date("2027-01-01T00:00:00Z"))[0]?.id).toBe(
       "2027-02-06",
     );
-    expect(eclipsesInDecade(2130).at(-1)?.id).toBe("2135-10-07");
+    expect(eclipsesInDecade(2140).at(-1)?.id).toBe("2142-05-25");
   });
 
   test("matches a local peak even when its UTC date differs", () => {

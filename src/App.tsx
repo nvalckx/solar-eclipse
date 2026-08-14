@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as Astronomy from "astronomy-engine";
 import { DEFAULT_CITY } from "./city-catalog";
 import {
@@ -8,7 +8,11 @@ import {
   nextLocalTotalEclipse,
   nextVisibleEclipse,
 } from "./eclipse-logic";
-import { ECLIPSE_CATALOG, eclipseById } from "./eclipse-catalog";
+import {
+  ECLIPSE_CATALOG,
+  ECLIPSE_CATALOG_METADATA,
+  eclipseById,
+} from "./eclipse-catalog";
 import { loadEclipsePath } from "./eclipse-paths";
 import type {
   AppView,
@@ -43,8 +47,8 @@ import { LiveView } from "./components/LiveView";
 import { formatCountdown } from "./live-view";
 import { PhoneAlignmentDialog } from "./components/PhoneAlignmentDialog";
 import { NotificationDialog } from "./components/NotificationDialog";
-import { EclipseCatalog } from "./components/EclipseCatalog";
-import { DetailedMap } from "./components/DetailedMap";
+const EclipseCatalog = lazy(() => import("./components/EclipseCatalog"));
+const DetailedMap = lazy(() => import("./components/DetailedMap"));
 import { EclipseMap } from "./components/EclipseMap";
 import { timezoneAt } from "./place-catalog";
 import { nearestPointOnPath, PATH_END_MS, PATH_START_MS } from "./map-data";
@@ -941,12 +945,18 @@ export function App() {
 
       {appView === "catalog" ? (
         <main>
-          <EclipseCatalog
-            records={ECLIPSE_CATALOG}
-            selectedId={selectedEclipseId}
-            location={location}
-            onSelect={(id) => selectEclipse(id, "event")}
-          />
+          <Suspense
+            fallback={
+              <div className="catalog-status">Loading eclipse catalog…</div>
+            }
+          >
+            <EclipseCatalog
+              records={ECLIPSE_CATALOG}
+              selectedId={selectedEclipseId}
+              location={location}
+              onSelect={(id) => selectEclipse(id, "event")}
+            />
+          </Suspense>
         </main>
       ) : (
         <main
@@ -1123,7 +1133,10 @@ export function App() {
                   </div>
                   <div>
                     <dt>Next total here</dt>
-                    <dd>{nextTotalAtLocation?.eventId ?? "Beyond 2135"}</dd>
+                    <dd>
+                      {nextTotalAtLocation?.eventId ??
+                        `Beyond ${ECLIPSE_CATALOG_METADATA.range.end.slice(0, 4)}`}
+                    </dd>
                     <dd className="stat-note">For {location.label}</dd>
                   </div>
                 </dl>
@@ -1138,7 +1151,7 @@ export function App() {
                   )}
                 </div>
               </div>
-              <article className="briefing-card">
+              <article className="info-card briefing-card">
                 <span className="kicker">AT A GLANCE · {location.label}</span>
                 <strong>{localBrief.coverage}</strong>
                 <p>{localBrief.safety}</p>
@@ -1234,28 +1247,34 @@ export function App() {
                   </div>
                 </div>
                 <div hidden={mapView !== "detail"}>
-                  <DetailedMap
-                    event={selectedRecord}
-                    path={eventPath ?? undefined}
-                    location={location}
-                    onSelect={applyMapCoordinates}
-                    active={mapView === "detail"}
-                    viewport={mapViewport}
-                    onViewportChange={setMapViewport}
-                    requestLoad={detailLoadRequested}
-                    onProviderError={() => {
-                      setMapError(
-                        "Online map tiles could not be loaded. Showing the bundled overview instead.",
-                      );
-                      setMapView("overview");
-                    }}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="map-status">Loading detailed map…</div>
+                    }
+                  >
+                    <DetailedMap
+                      event={selectedRecord}
+                      path={eventPath ?? undefined}
+                      location={location}
+                      onSelect={applyMapCoordinates}
+                      active={mapView === "detail"}
+                      viewport={mapViewport}
+                      onViewportChange={setMapViewport}
+                      requestLoad={detailLoadRequested}
+                      onProviderError={() => {
+                        setMapError(
+                          "Online map tiles could not be loaded. Showing the bundled overview instead.",
+                        );
+                        setMapView("overview");
+                      }}
+                    />
+                  </Suspense>
                 </div>
               </div>
             </section>
             <section
+              className="event-map-facts plan-circumstances"
               id="plan-circumstances"
-              className="plan-circumstances"
               aria-label="Key local times"
             >
               <div>
